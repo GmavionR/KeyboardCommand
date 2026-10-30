@@ -1,45 +1,35 @@
-# Domain Docs
+# 领域文档
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+工程 Skills 探索或修改代码时，按以下规则读取项目领域文档。
 
-## Before exploring, read these
+## 探索前阅读
 
-- **`GLOSSARY.md`** at the repo root, or
-- **`GLOSSARY-MAP.md`** at the repo root if it exists: it points at one `GLOSSARY.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+- 阅读根目录的 `GLOSSARY.md`；如果存在 `GLOSSARY-MAP.md`，则按映射读取与当前工作相关的各领域词汇表。
+- 阅读 `docs/adr/` 中与当前工作有关的架构决策记录。多领域仓库还要检查 `src/<context>/docs/adr/` 中对应领域的记录。
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+如果这些文件尚不存在，继续工作即可，不必专门提示缺失或建议预先创建。只有领域术语或架构决定已经明确时，才由 `/domain-modeling` 创建相应文档。
 
-## File structure
+## 单一上下文目录结构
 
-Single-context repo (most repos):
+本仓库采用单一上下文布局：
 
-```
+```text
 /
 ├── GLOSSARY.md
 ├── docs/adr/
 └── src/
 ```
 
-Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
+如果未来根目录出现 `GLOSSARY-MAP.md`，它将指向各领域的 `GLOSSARY.md`；系统级决策仍放在 `docs/adr/`，领域级决策放在各领域目录下的 `docs/adr/`。
 
-```
-/
-├── GLOSSARY-MAP.md
-├── docs/adr/
-└── src/<context>/
-    ├── GLOSSARY.md
-    └── docs/adr/
-```
+## 使用词汇表中的术语
 
-## Use the glossary's vocabulary
+在问题标题、重构提案、假设或测试名称中描述领域概念时，使用 `GLOSSARY.md` 中的术语，不要改用词汇表明确排除的近义词。
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
+如果需要的概念尚未收录，先判断这是项目真实存在的术语空缺，还是引入了项目并未使用的新说法；真实空缺可记录下来交由 `/domain-modeling` 处理。
 
-If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
+## 标记与架构决策冲突
 
-## Flag ADR conflicts
+如果某项输出与现有架构决策相矛盾，明确指出冲突及对应记录，不要静默覆盖。例如：
 
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
-
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+> 与 ADR-0007（订单事件溯源）相冲突；建议说明是否需要重新讨论该决策。

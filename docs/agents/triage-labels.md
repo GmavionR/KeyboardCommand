@@ -1,15 +1,13 @@
-# Triage Labels
+# 分类标签
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+工程 Skills 使用以下五个标准分类角色。本表将角色映射到本地问题跟踪器中的标签名称。
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
+| Skill 中的角色 | 本地标签 | 含义 |
+| --- | --- | --- |
+| `needs-triage` | `needs-triage` | 等待维护者评估 |
+| `needs-info` | `needs-info` | 等待报告者补充信息 |
+| `ready-for-agent` | `ready-for-agent` | 信息完整，可交由代理执行 |
+| `ready-for-human` | `ready-for-human` | 需要人工实施 |
+| `wontfix` | `wontfix` | 已决定不处理 |
 
-When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
-
-Edit the "Label in our tracker" column to match whatever vocabulary you actually use.
+Skill 提到某个角色时，使用本表对应的标签名称。若本地约定改变，只需修改“本地标签”列。
