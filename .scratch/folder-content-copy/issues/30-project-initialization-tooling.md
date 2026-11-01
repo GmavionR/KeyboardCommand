@@ -1,7 +1,9 @@
 # 讨论项目初始化工具配置
 
 Type: grilling
-Status: resolved
+Status: claimed
+
+> 2026-11-01 重新打开：用户希望变更已决定的包管理器方案（pnpm → bun），重新讨论中。
 
 ## 问题
 

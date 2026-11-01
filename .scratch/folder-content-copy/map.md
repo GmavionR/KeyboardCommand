@@ -15,7 +15,7 @@ Status: open
 - 遵循 [`docs/agents/domain.md`](../../docs/agents/domain.md) 和本地 Markdown 问题跟踪约定。
 - 当前技术方向为 Tauri 2、React、TypeScript 和 TanStack Router 客户端路由，不使用 SSR。功能路径需支持冷启动与重载，优先简洁路径；若打包验证不可靠则回退到哈希路径。设置弹窗打开时从 SQLite 读取配置，保存时写回 SQLite 并重新加载当前文件夹；完整复制正文保存为文件快照。
 - 首个交付版本包含文件夹树、实时搜索、可配置文本扩展名筛选、忽略目录、递归选择、复制、最多 20 条历史记录及选择恢复。
-- 当前仓库尚未初始化应用源码；项目初始化方案已由 [issue 30](issues/30-project-initialization-tooling.md) 决定。主页面与设置弹窗的 UI 控件、交互和布局见 [界面绘制说明](../../docs/design/文件夹复制界面绘制说明.md) 与 [issue 32](issues/32-folder-copy-ui-layout.md)。
+- 当前仓库尚未初始化应用源码；项目初始化方案原由 [issue 30](issues/30-project-initialization-tooling.md) 决定（pnpm），2026-11-01 因拟改用 bun 重新打开讨论。主页面与设置弹窗的 UI 控件、交互和布局见 [界面绘制说明](../../docs/design/文件夹复制界面绘制说明.md) 与 [issue 32](issues/32-folder-copy-ui-layout.md)。
 - 大目录默认阈值为单个文件夹的直接子项超过 50 个；阈值可在本功能设置弹窗修改。保存后重新加载当前文件夹。
 - 实时搜索使用用户自行安装的 `fd`，应用不打包 fd。搜索时包含 fd 默认隐藏或忽略的项目；目录忽略规则和文件夹排除规则交给 fd，文件排除规则由应用筛选搜索结果，再按文件白名单筛选。fd 不可用时禁用搜索并提示安装。搜索异常行为见 issue 26。
 - 当前仍待决定的明确问题记录在 `issues/` 的各自票据中；`Status: open` 表示待处理，`Status: claimed` 表示处理中，二者都属于尚未解决。`Blocked by` 表示等待前置票据。“尚未明确”只记录目前还无法表述成具体问题的雾区。完成调研不代表已经选定方案。
@@ -51,8 +51,6 @@ Status: open
 - [定义 fd 搜索不可用及遍历异常时的行为](issues/26-fd-search-availability-and-errors.md)：使用用户自行安装的 fd；不可用时禁用搜索并提示安装，遍历部分失败时展示已有结果并提示搜索不完整。
 - [确定忽略目录的默认规则](issues/27-ignored-directory-defaults.md)：设置全局共用，按目录名应用于任意层级；预置版本控制、依赖、构建输出、测试和缓存目录，允许逐项编辑并恢复默认值。
 - [定义文件与文件夹名称排除规则](issues/29-file-exclusion-rules.md)：规则按任意层级的名称匹配，`/` 后缀表示文件夹，文件与文件夹按统一的过滤语义影响树、搜索、递归选择和历史恢复；设置支持编辑及恢复默认。
-- [确定项目初始化工具配置](issues/30-project-initialization-tooling.md)：使用官方 Tauri React/TypeScript/pnpm 脚手架与 Vite；Node.js 和 pnpm 沿用当前环境，Rust 稳定版精确固定并手动更新；不额外配置质量检查、测试或提交钩子。
-
 ## 已完成调研（不代表最终选型）
 
 - [历史快照存储方案比较](issues/12-history-storage-research.md)：调研曾建议使用 SQLite 单库；用户已决定复制正文保存为文件快照，同时要求本次界面流程也真实读写 SQLite。[查看研究报告](https://github.com/GmavionR/KeyboardCommand/blob/research/history-storage/research/history-storage.md)
@@ -69,7 +67,7 @@ Status: open
 
 以下票据均尚未解决（`Status: open` 或 `Status: claimed`），标题链接可打开详细问题。每次解决或新增票据时同步更新本列表；票据正文是具体问题的唯一事实来源。
 
-（当前没有未决 Issue。）
+- [讨论项目初始化工具配置](issues/30-project-initialization-tooling.md)：原决定采用 pnpm，2026-11-01 重新打开，讨论是否改用 bun。
 
 ## 范围外
 
