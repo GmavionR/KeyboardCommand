@@ -15,7 +15,7 @@ Status: open
 - 遵循 [`docs/agents/domain.md`](../../docs/agents/domain.md) 和本地 Markdown 问题跟踪约定。
 - 当前技术方向为 Tauri 2、React、TypeScript 和 TanStack Router 客户端路由，不使用 SSR。功能路径需支持冷启动与重载，优先简洁路径；若打包验证不可靠则回退到哈希路径。设置弹窗打开时从 SQLite 读取配置，保存时写回 SQLite 并重新加载当前文件夹；完整复制正文保存为文件快照。
 - 首个交付版本包含文件夹树、实时搜索、可配置文本扩展名筛选、忽略目录、递归选择、复制、最多 20 条历史记录及选择恢复。
-- 当前仓库尚未初始化应用源码；项目初始化方案原由 [issue 30](issues/30-project-initialization-tooling.md) 决定（pnpm），2026-11-01 因拟改用 bun 重新打开讨论。主页面与设置弹窗的 UI 控件、交互和布局见 [界面绘制说明](../../docs/design/文件夹复制界面绘制说明.md) 与 [issue 32](issues/32-folder-copy-ui-layout.md)。
+- 当前仓库尚未初始化应用源码；项目初始化采用 bun（见 [issue 30](issues/30-project-initialization-tooling.md)）。主页面与设置弹窗的 UI 控件、交互和布局见 [界面绘制说明](../../docs/design/文件夹复制界面绘制说明.md) 与 [issue 32](issues/32-folder-copy-ui-layout.md)。
 - 大目录默认阈值为单个文件夹的直接子项超过 50 个；阈值可在本功能设置弹窗修改。保存后重新加载当前文件夹。
 - 实时搜索使用用户自行安装的 `fd`，应用不打包 fd。搜索时包含 fd 默认隐藏或忽略的项目；目录忽略规则和文件夹排除规则交给 fd，文件排除规则由应用筛选搜索结果，再按文件白名单筛选。fd 不可用时禁用搜索并提示安装。搜索异常行为见 issue 26。
 - 当前仍待决定的明确问题记录在 `issues/` 的各自票据中；`Status: open` 表示待处理，`Status: claimed` 表示处理中，二者都属于尚未解决。`Blocked by` 表示等待前置票据。“尚未明确”只记录目前还无法表述成具体问题的雾区。完成调研不代表已经选定方案。
@@ -38,6 +38,7 @@ Status: open
 - [确定历史记录列表的范围和排序](issues/33-history-list-scope-and-order.md)：选择文件夹时默认显示该文件夹记录，可切换查看全部记录；无当前文件夹时显示全部，始终按创建时间从新到旧排列，并区分当前文件夹无记录和全局无记录的空状态。
 - [定义设置数据库读写失败时的反馈](issues/34-settings-persistence-failure-feedback.md)：读取失败时不伪装成默认值，提供重试且禁用编辑；保存采用单事务，失败回滚并保留草稿与页面状态；以中文摘要及可展开技术详情反馈。
 - [定义树节点右键菜单的单文件复制行为](issues/35-copy-file-from-tree-context-menu.md)：可选文件节点可单独复制为单文件文件上下文包并新增历史，不影响现有选择。
+- [定义文件树的键盘焦点和空格键行为](issues/36-file-tree-keyboard-navigation.md)：上下键只移动焦点；空格对文件夹展开/关闭，对文件选中/取消选中。
 - [同一文件夹可保留多条历史，全局上限为 20 条](issues/07-history-cardinality.md)：打开文件夹时恢复其最新历史记录中的选择。
 - [将单实例和外部激活纳入应用外壳范围](issues/08-app-shell-scope.md)：将其纳入首版应用外壳；CLI/AHK 激活方式见 issue 19。
 - [将复制历史快照保存为文件](issues/17-choose-history-storage.md)：复制正文保存为文件快照；本功能配置使用 SQLite 查询和保存。
@@ -68,7 +69,7 @@ Status: open
 
 以下票据均尚未解决（`Status: open` 或 `Status: claimed`），标题链接可打开详细问题。每次解决或新增票据时同步更新本列表；票据正文是具体问题的唯一事实来源。
 
-- [讨论项目初始化工具配置](issues/30-project-initialization-tooling.md)：原决定采用 pnpm，2026-11-01 重新打开，讨论是否改用 bun。
+目前没有尚未决定的 issue。
 
 ## 范围外
 

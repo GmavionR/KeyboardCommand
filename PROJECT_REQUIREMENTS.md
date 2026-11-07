@@ -10,7 +10,7 @@ KeyboardCommand（简称 KbcApp）是一款面向 Windows 的快捷效率工具�
 
 ## 2. 技术方向
 
-当前采用 Rust、Tauri 2、React 和 TypeScript。使用 TanStack Router 实现纯客户端单页路由，不引入 TanStack Start，也不使用服务端渲染。每个功能应有独立的应用内路径，以便用户导航，也便于外部程序请求打开指定功能。项目使用 Tauri 官方 React/TypeScript/pnpm 脚手架与 Vite；pnpm 是唯一前端包管理器，但 Node.js 与 pnpm 版本沿用当前环境，不固定版本。Rust 稳定版精确固定在 `rust-toolchain.toml` 中，并按需或定期手动升级。初始化保留脚手架的开发和构建命令，不额外配置质量检查、测试工具或提交钩子。详见 [issue 30](.scratch/folder-content-copy/issues/30-project-initialization-tooling.md)。
+当前采用 Rust、Tauri 2、React 和 TypeScript。使用 TanStack Router 实现纯客户端单页路由，不引入 TanStack Start，也不使用服务端渲染。每个功能应有独立的应用内路径，以便用户导航，也便于外部程序请求打开指定功能。项目使用 Tauri 官方 React/TypeScript 脚手架与 Vite；bun 是唯一前端包管理器，Node.js 与 bun 版本沿用当前环境，不固定版本。Rust 稳定版精确固定在 `rust-toolchain.toml` 中，并按需或定期手动升级。初始化保留脚手架的开发和构建命令，不额外配置质量检查、测试工具或提交钩子。详见 [issue 30](.scratch/folder-content-copy/issues/30-project-initialization-tooling.md)。
 
 功能路径必须支持冷启动和重新加载时恢复到对应功能页。站内 URL 优先使用简洁路径；实现时验证 Windows 打包后的 Tauri 应用是否能从深层路径冷启动并重载。若不能可靠回退到应用入口，则改用哈希路径。外部程序传入的逻辑功能路径不受站内 URL 表示方式影响。
 

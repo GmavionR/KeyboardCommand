@@ -1,7 +1,7 @@
 # 讨论项目初始化工具配置
 
 Type: grilling
-Status: claimed
+Status: resolved
 
 > 2026-11-01 重新打开：用户希望变更已决定的包管理器方案（pnpm → bun），重新讨论中。
 
@@ -22,13 +22,15 @@ Tauri 2 官方 `create-tauri-app` 提供 React、TypeScript 与 `pnpm` 选项；
 
 ## 答案
 
-- 使用 Tauri 官方 `create-tauri-app` 初始化，选择 React、TypeScript 和 pnpm，沿用 Vite 基础配置；之后接入已确定的 TanStack Router。
-- pnpm 是唯一的前端包管理器。Node.js 和 pnpm 均不写入版本固定配置，直接使用当前开发环境中的版本；不设置 `packageManager` 版本固定字段或 Node 版本文件。
+- 使用 Tauri 官方 `create-tauri-app` 初始化，选择 React、TypeScript 和 bun，沿用 Vite 基础配置；之后接入已确定的 TanStack Router。
+- bun 是唯一的前端包管理器。Node.js 和 bun 均不写入版本固定配置，直接使用当前开发环境中的版本；不设置 `packageManager` 版本固定字段或 Node 版本文件。
 - 使用 `rust-toolchain.toml` 固定初始化时采用的 Rust 稳定版精确版本，并声明 Windows MSVC 编译目标和构建所需组件。Rust 工具链不自动漂移；定期或因依赖/功能需要时手动升级。
 - 保留脚手架自带的开发和构建命令，不额外配置格式化、lint、类型检查、前端或 Rust 测试、端到端测试或统一 `check` 命令。
 - 不配置 Git 提交前自动检查。
 
 ## Comments
 
-- 用户确认不固定 Node.js 与 pnpm 版本，直接使用当前环境。
+- 此前曾确认沿用 pnpm；该选择已由下方 bun 更正取代。
 - 用户确认不配置额外质量检查、测试工具和提交钩子；此决定取代此前同意的通用质量脚本建议。
+- 规格阶段核对时确认该票据已有完整答案及用户确认记录，状态据此更正为 resolved。
+- 用户更正包管理器决定：使用 bun 替代 pnpm；Node.js 与 bun 均沿用当前环境版本，不固定版本。
