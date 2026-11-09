@@ -14,7 +14,8 @@
       {
         "title": "文件夹内容复制",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "decorations": false
       }
     ],
     "security": {

@@ -1,0 +1,186 @@
+import { FileNode, SettingsConfig, SearchResultItem } from '../types';
+
+export function getAllSelectableFilesInNode(
+  node: FileNode,
+  settings: SettingsConfig
+): string[] {
+  if (node.isIgnored) return [];
+  if (node.type === 'file') {
+    if (isFileAllowed(node.name, node.path, settings)) {
+      return [node.path];
+    }
+    return [];
+  }
+  let files: string[] = [];
+  if (node.children) {
+    for (const child of node.children) {
+      files = files.concat(getAllSelectableFilesInNode(child, settings));
+    }
+  }
+  return files;
+}
+
+export function isFileAllowed(
+  filename: string,
+  relativePath: string,
+  settings: SettingsConfig
+): boolean {
+  // Check ignored dirs in path segments
+  const segments = relativePath.split(/[/\\]/);
+  for (const seg of segments.slice(0, -1)) {
+    if (settings.ignoredDirectories.includes(seg)) return false;
+  }
+
+  // Check exclusion rules (e.g. *.lock, package-lock.json)
+  for (const rule of settings.exclusions) {
+    if (rule.startsWith('*.')) {
+      const ext = rule.slice(1);
+      if (filename.endsWith(ext)) return false;
+    } else if (filename === rule || relativePath.endsWith(rule)) {
+      return false;
+    }
+  }
+
+  // Check whitelist
+  const dotIndex = filename.lastIndexOf('.');
+  const ext = dotIndex !== -1 ? filename.slice(dotIndex).toLowerCase() : '';
+  const matchExt = settings.whitelist.includes(ext);
+  const matchExact = settings.whitelist.includes(filename);
+
+  return matchExt || matchExact;
+}
+
+export function getNodeTriState(
+  node: FileNode,
+  selectedPaths: Set<string>,
+  settings: SettingsConfig
+): 'checked' | 'unchecked' | 'indeterminate' {
+  if (node.type === 'file') {
+    return selectedPaths.has(node.path) ? 'checked' : 'unchecked';
+  }
+  if (node.isIgnored) return 'unchecked';
+
+  const allFiles = getAllSelectableFilesInNode(node, settings);
+  if (allFiles.length === 0) return 'unchecked';
+
+  let selectedCount = 0;
+  for (const file of allFiles) {
+    if (selectedPaths.has(file)) selectedCount++;
+  }
+
+  if (selectedCount === 0) return 'unchecked';
+  if (selectedCount === allFiles.length) return 'checked';
+  return 'indeterminate';
+}
+
+export function searchNodes(
+  root: FileNode,
+  query: string,
+  settings: SettingsConfig,
+  selectedPaths: Set<string>
+): SearchResultItem[] {
+  if (!query.trim()) return [];
+  const normalized = query.toLowerCase().trim();
+  const results: SearchResultItem[] = [];
+
+  function traverse(node: FileNode) {
+    if (node.isIgnored) return;
+
+    if (node.path) {
+      const nodePathLower = node.path.toLowerCase();
+      const nodeNameLower = node.name.toLowerCase();
+      if (nodePathLower.includes(normalized) || nodeNameLower.includes(normalized)) {
+        if (node.type === 'file') {
+          if (isFileAllowed(node.name, node.path, settings)) {
+            results.push({
+              id: node.id,
+              name: node.name,
+              relativePath: node.path,
+              type: 'file',
+              isSelected: selectedPaths.has(node.path),
+            });
+          }
+        } else if (node.type === 'directory') {
+          results.push({
+            id: node.id,
+            name: node.name,
+            relativePath: node.path,
+            type: 'directory',
+          });
+        }
+      }
+    }
+
+    if (node.children) {
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+  }
+
+  traverse(root);
+
+  // Sort ascending by full path
+  results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  return results;
+}
+
+export function findNodeByPath(root: FileNode, targetPath: string): FileNode | null {
+  if (root.path === targetPath) return root;
+  if (!root.children) return null;
+  for (const child of root.children) {
+    const found = findNodeByPath(child, targetPath);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function getAncestorPaths(targetPath: string): string[] {
+  const parts = targetPath.split(/[/\\]/);
+  const ancestors: string[] = [];
+  let current = '';
+  for (let i = 0; i < parts.length - 1; i++) {
+    current = current ? `${current}/${parts[i]}` : parts[i];
+    ancestors.push(current);
+  }
+  return ancestors;
+}
+
+export function formatBytes(bytes?: number): string {
+  if (!bytes && bytes !== 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+export function generateContextPackageMarkdown(
+  rootFolder: string,
+  selectedPaths: string[],
+  rootNode: FileNode
+): string {
+  const now = new Date();
+  const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  let doc = `### 文件上下文包 (${selectedPaths.length} 个文件)\n`;
+  doc += `生成时间: ${timeStr}\n`;
+  doc += `来源根目录: ${rootFolder}\n\n`;
+  doc += `#### 文件清单:\n`;
+  selectedPaths.forEach((p, idx) => {
+    doc += `${idx + 1}. \`${p}\`\n`;
+  });
+  doc += `\n========================================\n\n`;
+
+  selectedPaths.forEach((p) => {
+    const node = findNodeByPath(rootNode, p);
+    const content = node?.content || `// 模拟读取自本地文件: ${p}\n// 文件大小: ${formatBytes(node?.size)}`;
+    const ext = p.split('.').pop() || '';
+    const lang = ['ts', 'tsx', 'js', 'jsx', 'json', 'css', 'html', 'md', 'py', 'rs'].includes(ext) ? ext : '';
+
+    doc += `#### [FILE: ${p}]\n`;
+    doc += `\`\`\`${lang}\n`;
+    doc += content + `\n`;
+    doc += `\`\`\`\n\n`;
+  });
+
+  return doc;
+}
