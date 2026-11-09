@@ -9,11 +9,11 @@ import {
 } from "./activation";
 import { router } from "./router";
 
-const supportedRoutes = new Set(["/folder-copy"]);
+const supportedRoutes = new Set(["/folder-copy", "/prompts"]);
 
 async function applyActivationRequest(request: ActivationRequest) {
   if (request.route && supportedRoutes.has(request.route)) {
-    await router.navigate({ to: "/folder-copy" });
+    await router.navigate({ to: request.route as "/folder-copy" | "/prompts" });
     setActivationNotice(request.error);
     return;
   }

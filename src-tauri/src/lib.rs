@@ -29,6 +29,7 @@ impl ActivationRequest {
 fn validate_route(route: &str) -> Result<&'static str, &'static str> {
     match route {
         "/folder-copy" => Ok(DEFAULT_ROUTE),
+        "/prompts" => Ok("/prompts"),
         _ => Err("无效的功能路径，已保留当前页面。"),
     }
 }
