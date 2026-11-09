@@ -7,7 +7,11 @@ export interface FileNode {
   size?: number; // bytes
   isIgnored?: boolean;
   ignoredReason?: string;
+  isExcluded?: boolean;
+  excludedReason?: string;
   children?: FileNode[];
+  childrenCount?: number;
+  hasMoreChildren?: boolean;
   isExpanded?: boolean;
   content?: string; // mock file content
 }

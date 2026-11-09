@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import {
-  INITIAL_FOLDER_TREE,
-  INITIAL_HISTORY,
-  DEFAULT_SETTINGS,
-  RECENT_FOLDERS,
-} from './data/mockData';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
+import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import {
   FileNode,
   SettingsConfig,
@@ -19,7 +16,6 @@ import {
 } from './utils/treeUtils';
 import { TitleBar } from './components/common/TitleBar';
 import { SystemSettingsModal } from './components/common/SystemSettingsModal';
-import { FolderPickerDialog } from './components/common/FolderPickerDialog';
 import { StatePresetBar, DesignStatePreset } from './components/folder-copy/StatePresetBar';
 import { TopToolbar } from './components/folder-copy/TopToolbar';
 import { SearchBar } from './components/folder-copy/SearchBar';
@@ -42,26 +38,51 @@ import {
   History,
 } from 'lucide-react';
 
+interface DirectoryPage {
+  children: FileNode[];
+  totalCount: number;
+}
+
+function updateDirectoryNode(
+  node: FileNode,
+  targetPath: string,
+  update: (node: FileNode) => FileNode
+): FileNode {
+  if (node.path === targetPath) return update(node);
+  if (!node.children) return node;
+
+  let changed = false;
+  const children = node.children.map((child) => {
+    const updated = updateDirectoryNode(child, targetPath, update);
+    if (updated !== child) changed = true;
+    return updated;
+  });
+  return changed ? { ...node, children } : node;
+}
+
+function normalizeFolderPath(path: string): string {
+  return path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+}
+
 export default function App() {
   // Folder & Settings State
-  const [currentPath, setCurrentPath] = useState('D:\\projects\\keyboard-command-core');
-  const [recentFolders, setRecentFolders] = useState<string[]>([...RECENT_FOLDERS]);
+  const [currentPath, setCurrentPath] = useState('');
+  const [recentFolders, setRecentFolders] = useState<string[]>([]);
   const [settings, setSettings] = useState<SettingsConfig>({ ...DEFAULT_SETTINGS });
-  const [rootNode, setRootNode] = useState<FileNode>(INITIAL_FOLDER_TREE);
+  const [rootNode, setRootNode] = useState<FileNode>({
+    id: 'root',
+    name: '',
+    path: '',
+    type: 'directory',
+  });
+  const [isFolderLoaded, setIsFolderLoaded] = useState(false);
   const [isLoadingFolder, setIsLoadingFolder] = useState(false);
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
+  const folderLoadVersion = useRef(0);
 
   // Selection & Tree State
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(
-    new Set([
-      'src/core/scanner.ts',
-      'src/core/copier.ts',
-      'src/core/sqlite-storage.ts',
-      'docs/ARCHITECTURE.md',
-    ])
-  );
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set(['docs', 'src', 'src/core'])
-  );
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
 
   // Layout & Auxiliary Panel State (issue 32 resolution)
@@ -73,7 +94,7 @@ export default function App() {
   const [narrowActiveTab, setNarrowActiveTab] = useState<'tree' | 'selection' | 'history'>('tree');
 
   // History State (FIFO max 20)
-  const [historyList, setHistoryList] = useState<CopyHistoryItem[]>([...INITIAL_HISTORY]);
+  const [historyList, setHistoryList] = useState<CopyHistoryItem[]>([]);
 
   // Modals & Dialogs
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Page rules settings (whitelist, exclusions, etc.)
@@ -84,7 +105,6 @@ export default function App() {
   const [previewMarkdown, setPreviewMarkdown] = useState('');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
-  const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
 
   // Design State Presets & Overrides for UI evaluation
   const [currentPreset, setCurrentPreset] = useState<DesignStatePreset>('normal');
@@ -110,6 +130,43 @@ export default function App() {
     []
   );
 
+  const loadFolder = useCallback(async (targetPath: string) => {
+    const requestedPath = targetPath.trim();
+    if (!requestedPath) {
+      showToast('error', '路径不能为空', '请输入有效的文件夹完整路径');
+      return;
+    }
+
+    const requestVersion = ++folderLoadVersion.current;
+    setIsLoadingFolder(true);
+    try {
+      const tree = await invoke<FileNode>('load_directory_tree', {
+        rootPath: requestedPath,
+        settings,
+      });
+      if (requestVersion !== folderLoadVersion.current) return;
+
+      const sameFolder = normalizeFolderPath(currentPath) === normalizeFolderPath(requestedPath);
+      setCurrentPath(requestedPath);
+      setRootNode(tree);
+      setIsFolderLoaded(true);
+      setExpandedFolders(new Set());
+      setHighlightedPath(null);
+      setLoadingPaths(new Set());
+      if (!sameFolder) setSelectedPaths(new Set());
+      setRecentFolders((previous) =>
+        [requestedPath, ...previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(requestedPath))].slice(0, 10)
+      );
+      showToast('success', sameFolder ? '已重新载入文件夹' : '已加载指定文件夹', requestedPath);
+    } catch (error) {
+      if (requestVersion === folderLoadVersion.current) {
+        showToast('error', '无法读取该文件夹', String(error));
+      }
+    } finally {
+      if (requestVersion === folderLoadVersion.current) setIsLoadingFolder(false);
+    }
+  }, [currentPath, settings, showToast]);
+
   // Preset switching logic
   const handleSelectPreset = (preset: DesignStatePreset) => {
     setCurrentPreset(preset);
@@ -122,17 +179,8 @@ export default function App() {
         setIsFdAvailable(true);
         setIsSearchIncomplete(false);
         setForcedSearchQuery('');
-        setRootNode(INITIAL_FOLDER_TREE);
-        setHistoryList([...INITIAL_HISTORY]);
-        setSelectedPaths(
-          new Set([
-            'src/core/scanner.ts',
-            'src/core/copier.ts',
-            'src/core/sqlite-storage.ts',
-            'docs/ARCHITECTURE.md',
-          ])
-        );
-        setExpandedFolders(new Set(['docs', 'src', 'src/core']));
+        setSelectedPaths(new Set());
+        setExpandedFolders(new Set());
         setAuxiliaryView('selection');
         setNarrowActiveTab('tree');
         break;
@@ -173,16 +221,9 @@ export default function App() {
       case 'empty_folder':
         setIsFdAvailable(true);
         setIsSearchIncomplete(false);
-        setRootNode({
-          id: 'root-empty',
-          name: 'empty-project',
-          path: '',
-          type: 'directory',
-          children: [],
-        });
         setSelectedPaths(new Set());
         if (viewportMode === 'narrow') setNarrowActiveTab('tree');
-        showToast('info', '已切换到空目录状态', '展示“空文件夹/无符合规则文件”的明确空状态');
+        showToast('info', '已清空当前选择', '目录内容仍来自当前真实文件夹');
         break;
 
       case 'empty_history':
@@ -195,11 +236,9 @@ export default function App() {
       case 'large_dir':
         setIsFdAvailable(true);
         setIsSearchIncomplete(false);
-        setRootNode(INITIAL_FOLDER_TREE);
-        setExpandedFolders(new Set(['src', 'src/assets', 'src/assets/icons']));
-        setHighlightedPath('src/assets/icons');
+        setExpandedFolders(new Set());
         if (viewportMode === 'narrow') setNarrowActiveTab('tree');
-        showToast('info', '已展开大目录 (src/assets/icons)', '展示首批30项及加载更多机制');
+        showToast('info', '大目录分页使用真实目录数据', '选择包含超过 50 个直接子项的目录进行验收');
         break;
 
       case 'copy_failure_dialog':
@@ -232,16 +271,7 @@ export default function App() {
       case 'copy_single_file':
         setIsFdAvailable(true);
         setIsSearchIncomplete(false);
-        setRootNode(INITIAL_FOLDER_TREE);
-        setExpandedFolders(new Set(['src', 'src/core']));
-        setHighlightedPath('src/core/scanner.ts');
-        if (viewportMode === 'narrow') setNarrowActiveTab('tree');
-        setTimeout(() => {
-          const singleNode = findNodeByPath(INITIAL_FOLDER_TREE, 'src/core/scanner.ts');
-          if (singleNode) {
-            handleCopySingleFile(singleNode);
-          }
-        }, 150);
+        showToast('info', '请从当前真实文件树选择文件', '该状态预设不会加载模拟目录');
         break;
     }
   };
@@ -289,30 +319,105 @@ export default function App() {
     });
   };
 
-  // Expand / collapse folder toggle
-  const handleToggleExpandFolder = (path: string) => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
+  // Expand a directory lazily, fetching its first page only when needed.
+  const handleToggleExpandFolder = async (path: string) => {
+    const node = findNodeByPath(rootNode, path);
+    if (!node || node.type !== 'directory' || node.isIgnored || node.isExcluded) return;
+
+    if (expandedFolders.has(path)) {
+      setExpandedFolders((previous) => {
+        const next = new Set(previous);
         next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
+        return next;
+      });
+      return;
+    }
+
+    setExpandedFolders((previous) => new Set(previous).add(path));
+    if (node.children !== undefined || !currentPath || loadingPaths.has(path)) return;
+
+    const requestVersion = folderLoadVersion.current;
+    setLoadingPaths((previous) => new Set(previous).add(path));
+    try {
+      const page = await invoke<DirectoryPage>('load_directory_page', {
+        rootPath: currentPath,
+        relativePath: path,
+        offset: 0,
+        settings,
+      });
+      if (requestVersion !== folderLoadVersion.current) return;
+      setRootNode((root) => updateDirectoryNode(root, path, (directory) => ({
+        ...directory,
+        children: page.children,
+        childrenCount: page.totalCount,
+        hasMoreChildren: page.totalCount > page.children.length,
+      })));
+    } catch (error) {
+      showToast('error', '无法读取子目录', String(error));
+      setExpandedFolders((previous) => {
+        const next = new Set(previous);
+        next.delete(path);
+        return next;
+      });
+    } finally {
+      setLoadingPaths((previous) => {
+        const next = new Set(previous);
+        next.delete(path);
+        return next;
+      });
+    }
   };
 
-  // Batch Expand all non-ignored folders
+  const handleLoadMoreChildren = async (path: string) => {
+    const directory = findNodeByPath(rootNode, path);
+    if (!directory || directory.type !== 'directory' || !directory.hasMoreChildren || loadingPaths.has(path)) return;
+    const offset = directory.children?.length ?? 0;
+    const requestVersion = folderLoadVersion.current;
+    setLoadingPaths((previous) => new Set(previous).add(path));
+    try {
+      const page = await invoke<DirectoryPage>('load_directory_page', {
+        rootPath: currentPath,
+        relativePath: path,
+        offset,
+        settings,
+      });
+      if (requestVersion !== folderLoadVersion.current) return;
+      setRootNode((root) => updateDirectoryNode(root, path, (current) => {
+        const children = [...(current.children ?? []), ...page.children];
+        return {
+          ...current,
+          children,
+          childrenCount: page.totalCount,
+          hasMoreChildren: children.length < page.totalCount,
+        };
+      }));
+    } catch (error) {
+      showToast('error', '无法加载更多目录项', String(error));
+    } finally {
+      setLoadingPaths((previous) => {
+        const next = new Set(previous);
+        next.delete(path);
+        return next;
+      });
+    }
+  };
+
+  // Expand all currently loaded folders and fetch one visible page for each.
   const handleExpandAllFolders = () => {
     const allFolderPaths: string[] = [];
+    const foldersNeedingLoad: string[] = [];
     const traverse = (node: FileNode) => {
-      if (node.type === 'directory' && !node.isIgnored) {
+      if (node.type === 'directory' && !node.isIgnored && !node.isExcluded) {
         if (node.path) allFolderPaths.push(node.path);
+        if (node.path && node.children === undefined) foldersNeedingLoad.push(node.path);
         node.children?.forEach(traverse);
       }
     };
     traverse(rootNode);
     setExpandedFolders(new Set(allFolderPaths));
+    foldersNeedingLoad
+      .filter((path) => !expandedFolders.has(path))
+      .forEach((path) => void handleToggleExpandFolder(path));
     showToast('info', `已展开全部目录 (${allFolderPaths.length} 个)`);
   };
 
@@ -362,92 +467,30 @@ export default function App() {
     showToast('info', '已清空全部所选文件');
   };
 
-  // Select folder dialog: attempts native window.showDirectoryPicker or opens Windows FolderPickerDialog
+  // Use Tauri's native system folder picker.
   const handleOpenFolderDialog = async () => {
-    if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
-      try {
-        const dirHandle = await (window as any).showDirectoryPicker();
-        if (dirHandle && dirHandle.name) {
-          const fullPath = `D:\\projects\\${dirHandle.name}`;
-          handleManualChangePath(fullPath);
-          return;
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') return; // User pressed Cancel in native picker
-      }
-    }
-    // Fallback or dialog in iframe: opens Windows Folder Picker Modal
-    setIsFolderPickerOpen(true);
-  };
-
-  // Dedicated Refresh / Load button: reloads the folder currently specified in the input box
-  const handleRefreshFolder = (targetPath: string) => {
-    const trimmed = targetPath.trim() || currentPath;
-    setIsLoadingFolder(true);
-    setTimeout(() => {
-      setCurrentPath(trimmed);
-      setIsLoadingFolder(false);
-      setRootNode(INITIAL_FOLDER_TREE);
-      showToast('success', '已重新载入文件夹', trimmed);
-    }, 400);
-  };
-
-  // Select a recent folder (restore last valid historical selections)
-  const handleSelectRecentFolder = (folderPath: string) => {
-    setIsLoadingFolder(true);
-    setTimeout(() => {
-      setCurrentPath(folderPath);
-      setIsLoadingFolder(false);
-      setRootNode(INITIAL_FOLDER_TREE);
-
-      const lastHist = historyList.find((h) => h.sourceFolder === folderPath);
-      if (lastHist) {
-        setSelectedPaths(new Set(lastHist.filePaths));
-        showToast(
-          'success',
-          `已加载目录并恢复历史勾选 (${lastHist.filePaths.length} 个文件)`,
-          folderPath
-        );
-      } else {
-        setSelectedPaths(new Set(['package.json', 'README.md']));
-        showToast('success', '已切换到选定目录', folderPath);
-      }
-    }, 400);
-  };
-
-  // Directly type or paste path (手写输入路径) and press Enter to load
-  const handleManualChangePath = (newPath: string) => {
-    const trimmed = newPath.trim();
-    if (!trimmed) {
-      showToast('error', '路径不能为空', '请输入有效的文件夹完整路径');
-      return;
-    }
-    setIsLoadingFolder(true);
-    setTimeout(() => {
-      setCurrentPath(trimmed);
-      setIsLoadingFolder(false);
-      setRootNode(INITIAL_FOLDER_TREE);
-
-      // Add to recent folders list
-      setRecentFolders((prev) => {
-        const filtered = prev.filter((p) => p !== trimmed);
-        return [trimmed, ...filtered].slice(0, 10);
+    try {
+      const selectedPath = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: currentPath || undefined,
       });
+      if (typeof selectedPath === 'string') await loadFolder(selectedPath);
+    } catch (error) {
+      showToast('error', '无法打开文件夹选择器', String(error));
+    }
+  };
 
-      // Restore selections if this folder is in history
-      const lastHist = historyList.find((h) => h.sourceFolder === trimmed);
-      if (lastHist) {
-        setSelectedPaths(new Set(lastHist.filePaths));
-        showToast(
-          'success',
-          `已加载指定路径并恢复历史勾选 (${lastHist.filePaths.length} 个文件)`,
-          trimmed
-        );
-      } else {
-        setSelectedPaths(new Set(['src/core/scanner.ts', 'src/core/copier.ts']));
-        showToast('success', '已加载指定根目录路径', trimmed);
-      }
-    }, 350);
+  const handleRefreshFolder = (targetPath: string) => {
+    loadFolder(targetPath.trim() || currentPath);
+  };
+
+  const handleSelectRecentFolder = (folderPath: string) => {
+    loadFolder(folderPath);
+  };
+
+  const handleManualChangePath = (newPath: string) => {
+    loadFolder(newPath);
   };
 
   // Preview generated package markdown
@@ -707,6 +750,10 @@ export default function App() {
               <div className="flex-1 overflow-hidden">
                 <FileTree
                   rootNode={rootNode}
+                  currentFolderPath={currentPath}
+                  isFolderLoaded={isFolderLoaded}
+                  isLoadingFolder={isLoadingFolder}
+                  loadingPaths={loadingPaths}
                   settings={settings}
                   selectedPaths={selectedPaths}
                   onToggleFile={handleToggleFileSelect}
@@ -714,6 +761,7 @@ export default function App() {
                   highlightedPath={highlightedPath}
                   expandedFolders={expandedFolders}
                   onToggleExpandFolder={handleToggleExpandFolder}
+                  onLoadMore={handleLoadMoreChildren}
                   onCopySingleFile={handleCopySingleFile}
                   onExpandAll={handleExpandAllFolders}
                   onCollapseAll={handleCollapseAllFolders}
@@ -817,6 +865,10 @@ export default function App() {
               {narrowActiveTab === 'tree' && (
                 <FileTree
                   rootNode={rootNode}
+                  currentFolderPath={currentPath}
+                  isFolderLoaded={isFolderLoaded}
+                  isLoadingFolder={isLoadingFolder}
+                  loadingPaths={loadingPaths}
                   settings={settings}
                   selectedPaths={selectedPaths}
                   onToggleFile={handleToggleFileSelect}
@@ -824,6 +876,7 @@ export default function App() {
                   highlightedPath={highlightedPath}
                   expandedFolders={expandedFolders}
                   onToggleExpandFolder={handleToggleExpandFolder}
+                  onLoadMore={handleLoadMoreChildren}
                   onCopySingleFile={handleCopySingleFile}
                   onExpandAll={handleExpandAllFolders}
                   onCollapseAll={handleCollapseAllFolders}
@@ -913,14 +966,6 @@ export default function App() {
 
       {/* 10. Rules & Specs Reference Modal */}
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-
-      {/* 11. Windows Folder Picker Dialog */}
-      <FolderPickerDialog
-        isOpen={isFolderPickerOpen}
-        onClose={() => setIsFolderPickerOpen(false)}
-        onSelectFolder={handleManualChangePath}
-        currentPath={currentPath}
-      />
 
       {/* Toast Notification Container */}
       {toast && (

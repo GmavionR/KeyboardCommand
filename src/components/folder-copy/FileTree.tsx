@@ -27,6 +27,10 @@ import {
 
 interface FileTreeProps {
   rootNode: FileNode;
+  currentFolderPath: string;
+  isFolderLoaded: boolean;
+  isLoadingFolder: boolean;
+  loadingPaths: Set<string>;
   settings: SettingsConfig;
   selectedPaths: Set<string>;
   onToggleFile: (path: string) => void;
@@ -34,6 +38,7 @@ interface FileTreeProps {
   highlightedPath?: string | null;
   expandedFolders: Set<string>;
   onToggleExpandFolder: (path: string) => void;
+  onLoadMore: (path: string) => void;
   onCopySingleFile?: (node: FileNode) => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
@@ -67,6 +72,10 @@ function getFlattenedVisibleNodes(
 
 export const FileTree: React.FC<FileTreeProps> = ({
   rootNode,
+  currentFolderPath,
+  isFolderLoaded,
+  isLoadingFolder,
+  loadingPaths,
   settings,
   selectedPaths,
   onToggleFile,
@@ -74,6 +83,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   highlightedPath,
   expandedFolders,
   onToggleExpandFolder,
+  onLoadMore,
   onCopySingleFile,
   onExpandAll,
   onCollapseAll,
@@ -102,6 +112,14 @@ export const FileTree: React.FC<FileTreeProps> = ({
       setFocusedPath(highlightedPath);
     }
   }, [highlightedPath]);
+
+  useEffect(() => {
+    const visiblePaths = getFlattenedVisibleNodes(rootNode, expandedFolders)
+      .map((node) => node.path)
+      .filter(Boolean);
+    if (focusedPath && visiblePaths.includes(focusedPath)) return;
+    setFocusedPath(visiblePaths[0] ?? null);
+  }, [rootNode, expandedFolders, focusedPath]);
 
   // Smoothly scroll the focused element into view
   useEffect(() => {
@@ -165,12 +183,13 @@ export const FileTree: React.FC<FileTreeProps> = ({
       const currentNode = visibleNodes.find((n) => n.path === focusedPath);
       if (currentNode) {
         if (currentNode.type === 'directory') {
-          if (!currentNode.isIgnored) {
+          if (!currentNode.isIgnored && !currentNode.isExcluded) {
             onToggleExpandFolder(currentNode.path);
           }
         } else {
           if (
             !currentNode.isIgnored &&
+            !currentNode.isExcluded &&
             isFileAllowed(currentNode.name, currentNode.path, settings)
           ) {
             onToggleFile(currentNode.path);
@@ -182,12 +201,13 @@ export const FileTree: React.FC<FileTreeProps> = ({
       const currentNode = visibleNodes.find((n) => n.path === focusedPath);
       if (currentNode) {
         if (currentNode.type === 'directory') {
-          if (!currentNode.isIgnored) {
+          if (!currentNode.isIgnored && !currentNode.isExcluded) {
             onToggleExpandFolder(currentNode.path);
           }
         } else {
           if (
             !currentNode.isIgnored &&
+            !currentNode.isExcluded &&
             isFileAllowed(currentNode.name, currentNode.path, settings)
           ) {
             onToggleFile(currentNode.path);
@@ -229,6 +249,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
     if (
       node.type === 'file' &&
       !node.isIgnored &&
+      !node.isExcluded &&
       isFileAllowed(node.name, node.path, settings)
     ) {
       e.preventDefault();
@@ -244,9 +265,29 @@ export const FileTree: React.FC<FileTreeProps> = ({
     }
   };
 
-  const hasChildren = rootNode.children && rootNode.children.length > 0;
+  if (!currentFolderPath) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400 dark:text-slate-500">
+        <Folder className="w-10 h-10 text-slate-400 dark:text-slate-600 mb-2 stroke-1" />
+        <div className="text-slate-800 dark:text-slate-200 font-semibold text-xs">
+          选择要浏览的文件夹
+        </div>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 max-w-xs leading-relaxed">
+          使用上方的「选择文件夹」按钮，或在路径栏输入 Windows 文件夹路径后按 Enter。
+        </p>
+      </div>
+    );
+  }
 
-  if (!hasChildren) {
+  if (isLoadingFolder && !isFolderLoaded) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-xs text-slate-500 dark:text-slate-400">
+        正在读取文件夹…
+      </div>
+    );
+  }
+
+  if (isFolderLoaded && !rootNode.children?.length) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400 dark:text-slate-500">
         <Folder className="w-10 h-10 text-slate-400 dark:text-slate-600 mb-2 stroke-1" />
@@ -336,6 +377,8 @@ export const FileTree: React.FC<FileTreeProps> = ({
           onFocusNode={setFocusedPath}
           expandedFolders={expandedFolders}
           onToggleExpandFolder={onToggleExpandFolder}
+          onLoadMore={onLoadMore}
+          loadingPaths={loadingPaths}
           onContextMenu={handleNodeContextMenu}
         />
       </div>
@@ -403,6 +446,8 @@ interface TreeNodeProps {
   onFocusNode: (path: string) => void;
   expandedFolders: Set<string>;
   onToggleExpandFolder: (path: string) => void;
+  onLoadMore: (path: string) => void;
+  loadingPaths: Set<string>;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }
 
@@ -418,18 +463,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   onFocusNode,
   expandedFolders,
   onToggleExpandFolder,
+  onLoadMore,
+  loadingPaths,
   onContextMenu,
 }) => {
-  const isLargeDirectory =
-    node.type === 'directory' &&
-    !!node.children &&
-    node.children.length > settings.largeDirThreshold;
-
-  const [visibleCount, setVisibleCount] = useState(30);
-
-  useEffect(() => {
-    setVisibleCount(30);
-  }, [node.id]);
+  const totalChildren = node.childrenCount ?? node.children?.length ?? 0;
+  const loadedChildren = node.children?.length ?? 0;
+  const isLargeDirectory = node.type === 'directory' && totalChildren > settings.largeDirThreshold;
+  const isNodeBlocked = !!node.isIgnored || !!node.isExcluded;
+  const isNodeLoading = loadingPaths.has(node.path);
 
   const isExpanded = node.path === '' ? true : expandedFolders.has(node.path);
   const isHighlighted = highlightedPath === node.path;
@@ -444,7 +486,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
   const handleFolderCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (node.isIgnored) return;
+    if (isNodeBlocked) return;
     onFocusNode(node.path);
     const shouldSelect = triState !== 'checked';
     onToggleFolderRecursive(node, shouldSelect);
@@ -458,7 +500,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
   const handleRowClick = () => {
     onFocusNode(node.path);
-    if (node.isIgnored) return;
+    if (isNodeBlocked) return;
     if (node.type === 'directory') {
       onToggleExpandFolder(node.path);
     } else {
@@ -487,17 +529,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     }
   };
 
-  const totalChildren = node.children ? node.children.length : 0;
-  const displayedChildren = isLargeDirectory
-    ? node.children?.slice(0, visibleCount)
-    : node.children;
-  const remainingCount = isLargeDirectory
-    ? Math.max(0, totalChildren - visibleCount)
-    : 0;
-
   const handleLoadMore = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setVisibleCount((prev) => Math.min(totalChildren, prev + 30));
+    onLoadMore(node.path);
   };
 
   return (
@@ -515,12 +549,12 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             ? 'bg-amber-100/80 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 ring-1 ring-amber-400 font-medium'
             : 'hover:bg-slate-100 dark:hover:bg-slate-800/70 text-slate-700 dark:text-slate-200'
         } ${
-          node.isIgnored
+          isNodeBlocked
             ? 'opacity-60 bg-slate-50 dark:bg-slate-900/40 text-slate-400 dark:text-slate-500'
             : ''
         }`}
         title={
-          node.type === 'file' && !node.isIgnored
+          node.type === 'file' && !isNodeBlocked
             ? `${node.path} (右键可“仅复制当前文件”，空格切换勾选)`
             : `${node.path} (空格展开/折叠)`
         }
@@ -528,7 +562,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         <div className="flex items-center space-x-2 min-w-0 flex-1">
           {/* Expand/Collapse Chevron */}
           {node.type === 'directory' ? (
-            node.isIgnored ? (
+            isNodeBlocked ? (
               <span className="w-4 h-4 flex items-center justify-center text-slate-400 dark:text-slate-600">
                 <Slash className="w-3 h-3" />
               </span>
@@ -555,7 +589,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           )}
 
           {/* Tri-state Checkbox */}
-          {!node.isIgnored ? (
+          {!isNodeBlocked ? (
             <button
               type="button"
               onClick={
@@ -597,7 +631,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
           {/* Icon */}
           {node.type === 'directory' ? (
-            node.isIgnored ? (
+            isNodeBlocked ? (
               <Folder className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0" />
             ) : isExpanded ? (
               <FolderOpen className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
@@ -622,25 +656,45 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               已忽略
             </span>
           )}
+          {node.isExcluded && (
+            <span
+              className="text-[10px] px-1.5 py-0.2 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 shrink-0"
+              title={node.excludedReason || '命中目录排除规则'}
+            >
+              已排除
+            </span>
+          )}
         </div>
 
         {/* Right Info: File Size / Directory Children Count */}
         <div className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500 font-mono ml-2">
           {node.type === 'file' ? (
             <span>{formatBytes(node.size)}</span>
-          ) : !node.isIgnored && node.children ? (
-            <span>{node.children.length} 项</span>
+          ) : !isNodeBlocked && node.childrenCount !== undefined ? (
+            <span>{node.childrenCount} 项</span>
           ) : null}
         </div>
       </div>
 
       {/* Children list when expanded */}
       {node.type === 'directory' &&
-        !node.isIgnored &&
+        !isNodeBlocked &&
         isExpanded &&
-        displayedChildren && (
+        !node.children && (
+          <div
+            style={{ paddingLeft: `${(depth + 1) * 18 + 12}px` }}
+            className="py-1.5 text-[11px] text-slate-400 dark:text-slate-500"
+          >
+            {isNodeLoading ? '正在读取目录…' : '展开目录以读取内容'}
+          </div>
+        )}
+
+      {node.type === 'directory' &&
+        !isNodeBlocked &&
+        isExpanded &&
+        node.children && (
           <div className="flex flex-col">
-            {displayedChildren.map((child) => (
+            {node.children.map((child) => (
               <TreeNode
                 key={child.id}
                 node={child}
@@ -654,6 +708,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 onFocusNode={onFocusNode}
                 expandedFolders={expandedFolders}
                 onToggleExpandFolder={onToggleExpandFolder}
+                onLoadMore={onLoadMore}
+                loadingPaths={loadingPaths}
                 onContextMenu={onContextMenu}
               />
             ))}
@@ -667,24 +723,25 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 <div className="text-[11px] text-slate-700 dark:text-slate-300">
                   已显示{' '}
                   <span className="text-blue-600 dark:text-blue-400 font-bold">
-                    {Math.min(visibleCount, totalChildren)}
+                    {loadedChildren}
                   </span>{' '}
                   项， 共 <span className="font-bold">{totalChildren}</span> 项，
                   剩余{' '}
                   <span className="text-amber-600 dark:text-amber-400 font-bold">
-                    {remainingCount}
+                    {Math.max(0, totalChildren - loadedChildren)}
                   </span>{' '}
                   项
                 </div>
 
-                {remainingCount > 0 ? (
+                {node.hasMoreChildren ? (
                   <button
                     type="button"
                     onClick={handleLoadMore}
+                    disabled={isNodeLoading}
                     className="flex items-center space-x-1.5 px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[11px] font-medium transition-all shadow-xs cursor-pointer"
                   >
                     <PlusCircle className="w-3.5 h-3.5" />
-                    <span>加载更多 ({Math.min(30, remainingCount)} 项)</span>
+                    <span>{isNodeLoading ? '正在加载…' : `加载更多 (${Math.min(30, totalChildren - loadedChildren)} 项)`}</span>
                   </button>
                 ) : (
                   <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">

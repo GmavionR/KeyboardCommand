@@ -19,7 +19,7 @@ import {
   DEFAULT_IGNORED_DIRS,
   DEFAULT_WHITELIST,
   DEFAULT_EXCLUSIONS,
-} from '../../data/mockData';
+} from '../../data/defaultSettings';
 
 interface SettingsModalProps {
   isOpen: boolean;

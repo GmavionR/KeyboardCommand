@@ -4,7 +4,7 @@ export function getAllSelectableFilesInNode(
   node: FileNode,
   settings: SettingsConfig
 ): string[] {
-  if (node.isIgnored) return [];
+  if (node.isIgnored || node.isExcluded) return [];
   if (node.type === 'file') {
     if (isFileAllowed(node.name, node.path, settings)) {
       return [node.path];
@@ -28,24 +28,27 @@ export function isFileAllowed(
   // Check ignored dirs in path segments
   const segments = relativePath.split(/[/\\]/);
   for (const seg of segments.slice(0, -1)) {
-    if (settings.ignoredDirectories.includes(seg)) return false;
+    if (settings.ignoredDirectories.some((ignored) => ignored.toLowerCase() === seg.toLowerCase())) return false;
   }
 
-  // Check exclusion rules (e.g. *.lock, package-lock.json)
+  const matchesRule = (rule: string) => {
+    const expression = rule
+      .split('*')
+      .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'))
+      .join('.*');
+    return new RegExp(`^${expression}$`, 'i').test(filename);
+  };
+
+  // Exclusions are name-based; a trailing slash marks a directory rule.
   for (const rule of settings.exclusions) {
-    if (rule.startsWith('*.')) {
-      const ext = rule.slice(1);
-      if (filename.endsWith(ext)) return false;
-    } else if (filename === rule || relativePath.endsWith(rule)) {
-      return false;
-    }
+    if (!rule.endsWith('/') && matchesRule(rule)) return false;
   }
 
   // Check whitelist
   const dotIndex = filename.lastIndexOf('.');
   const ext = dotIndex !== -1 ? filename.slice(dotIndex).toLowerCase() : '';
-  const matchExt = settings.whitelist.includes(ext);
-  const matchExact = settings.whitelist.includes(filename);
+  const matchExt = settings.whitelist.some((rule) => rule.toLowerCase() === ext);
+  const matchExact = settings.whitelist.some((rule) => rule.toLowerCase() === filename.toLowerCase());
 
   return matchExt || matchExact;
 }

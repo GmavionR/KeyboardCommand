@@ -56,12 +56,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleCopyPath = (e: React.MouseEvent) => {
+  const handleCopyPath = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!currentPath) return;
-    navigator.clipboard.writeText(currentPath);
-    setCopiedPath(true);
-    setTimeout(() => setCopiedPath(false), 2000);
+    try {
+      await navigator.clipboard.writeText(currentPath);
+      setCopiedPath(true);
+      setTimeout(() => setCopiedPath(false), 2000);
+    } catch {
+      setCopiedPath(false);
+    }
   };
 
   const handleSubmitPath = () => {
@@ -193,7 +197,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               </div>
 
               <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 py-1">
-                {recentFolders.map((path) => {
+                {recentFolders.length === 0 ? (
+                  <div className="px-3 py-3 text-center text-[11px] text-slate-400 dark:text-slate-500">
+                    暂无最近使用的文件夹
+                  </div>
+                ) : recentFolders.map((path) => {
                   const isCurrent = path === currentPath;
                   return (
                     <button
