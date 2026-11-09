@@ -1,0 +1,51 @@
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color: #172033;
+  background: #f5f7fa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+body { min-width: 720px; min-height: 100vh; margin: 0; }
+button, input { font: inherit; }
+button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #d0d7e2;
+  border-radius: 6px;
+  color: #24334b;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: #7298da; background: #f5f8ff; }
+button:disabled { color: #98a2b3; background: #f0f2f5; cursor: default; }
+
+.page { display: flex; min-height: 100vh; flex-direction: column; }
+.titlebar {
+  display: flex;
+  height: 56px;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid #e2e7ee;
+  background: #fff;
+}
+.titlebar h1 { margin: 0; font-size: 17px; font-weight: 650; }
+.workspace { display: flex; min-height: 0; flex: 1; flex-direction: column; padding: 18px 22px 16px; gap: 14px; }
+.toolbar { display: flex; gap: 10px; }
+.toolbar input { min-width: 0; flex: 1; padding: 0 12px; border: 1px solid #d0d7e2; border-radius: 6px; background: #fff; color: #697586; }
+.panels { display: grid; min-height: 0; flex: 1; grid-template-columns: 2fr 1fr; gap: 14px; }
+.panel { min-height: 260px; padding: 16px; border: 1px solid #e0e5ed; border-radius: 8px; background: #fff; }
+.panel h2 { margin: 0; font-size: 14px; font-weight: 650; }
+.empty-state { margin-top: 30px; color: #8a94a4; font-size: 13px; text-align: center; }
+.actionbar { display: flex; min-height: 54px; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid #e0e5ed; border-radius: 8px; background: #fff; color: #526176; font-size: 13px; }
+.actionbar button { color: #fff; border-color: #386fd0; background: #386fd0; }
+.actionbar button:disabled { color: #98a2b3; border-color: #e1e5eb; background: #f0f2f5; }
+
+@media (max-width: 840px) {
+  body { min-width: 0; }
+  .workspace { padding: 12px; }
+  .panels { grid-template-columns: 1fr; }
+  .selection-panel { display: none; }
+}
