@@ -38,6 +38,7 @@ Status: resolved
 - [确定历史记录列表的范围和排序](issues/33-history-list-scope-and-order.md)：选择文件夹时默认显示该文件夹记录，可切换查看全部记录；无当前文件夹时显示全部，始终按创建时间从新到旧排列，并区分当前文件夹无记录和全局无记录的空状态。
 - [定义设置数据库读写失败时的反馈](issues/34-settings-persistence-failure-feedback.md)：读取失败时不伪装成默认值，提供重试且禁用编辑；保存采用单事务，失败回滚并保留草稿与页面状态；以中文摘要及可展开技术详情反馈。
 - [定义树节点右键菜单的单文件复制行为](issues/35-copy-file-from-tree-context-menu.md)：可选文件节点可单独复制为单文件文件上下文包并新增历史，不影响现有选择。
+- [定义树节点在系统文件管理器中的显示行为](issues/37-reveal-tree-node-in-file-manager.md)：有效文件可显示在其所在目录，文件夹直接打开；忽略和排除文件夹不提供右键操作，且不改变勾选状态。
 - [定义文件树的键盘焦点和空格键行为](issues/36-file-tree-keyboard-navigation.md)：上下键只移动焦点；空格对文件夹展开/关闭，对文件选中/取消选中。
 - [同一文件夹可保留多条历史，全局上限为 20 条](issues/07-history-cardinality.md)：打开文件夹时恢复其最新历史记录中的选择。
 - [将单实例和外部激活纳入应用外壳范围](issues/08-app-shell-scope.md)：将其纳入首版应用外壳；CLI/AHK 激活方式见 issue 19。

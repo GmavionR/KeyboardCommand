@@ -9,6 +9,7 @@ import {
   FileJson,
   FileSpreadsheet,
   File,
+  ExternalLink,
   CheckSquare,
   Square,
   MinusSquare,
@@ -40,6 +41,7 @@ interface FileTreeProps {
   onToggleExpandFolder: (path: string) => void;
   onLoadMore: (path: string) => void;
   onCopySingleFile?: (node: FileNode) => void;
+  onRevealNodeInFileManager?: (node: FileNode) => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   onSelectAllValid?: () => void;
@@ -85,6 +87,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onToggleExpandFolder,
   onLoadMore,
   onCopySingleFile,
+  onRevealNodeInFileManager,
   onExpandAll,
   onCollapseAll,
   onSelectAllValid,
@@ -99,7 +102,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
       : rootNode.path;
   });
 
-  // Context Menu state for right click on selectable file nodes
+  // Context Menu state for right click on selectable file and directory nodes
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -246,17 +249,19 @@ export const FileTree: React.FC<FileTreeProps> = ({
   };
 
   const handleNodeContextMenu = (e: React.MouseEvent, node: FileNode) => {
-    if (
-      node.type === 'file' &&
+    const isSelectableNode =
       !node.isIgnored &&
       !node.isExcluded &&
-      isFileAllowed(node.name, node.path, settings)
+      (node.type === 'directory' || isFileAllowed(node.name, node.path, settings));
+
+    if (
+      isSelectableNode
     ) {
       e.preventDefault();
       e.stopPropagation();
       setFocusedPath(node.path);
-      const menuWidth = 230;
-      const menuHeight = 90;
+      const menuWidth = 240;
+      const menuHeight = node.type === 'file' ? 132 : 94;
       const x = Math.min(e.clientX, window.innerWidth - menuWidth - 10);
       const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
       setContextMenu({ x, y, targetNode: node });
@@ -394,7 +399,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
         </div>
       </div>
 
-      {/* Floating Right-Click Context Menu for selectable file nodes */}
+      {/* Right-click context menu for selectable nodes */}
       {contextMenu && (
         <div
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
@@ -405,23 +410,40 @@ export const FileTree: React.FC<FileTreeProps> = ({
             {contextMenu.targetNode.name}
           </div>
 
+          {contextMenu.targetNode.type === 'file' && (
+            <button
+              type="button"
+              onClick={() => {
+                onCopySingleFile?.(contextMenu.targetNode);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-600/30 hover:text-blue-600 dark:hover:text-white flex items-center justify-between space-x-2 transition-colors cursor-pointer group"
+              title="生成单文件文件上下文包并加入历史，不改变当前已有的勾选状态"
+            >
+              <div className="flex items-center space-x-2">
+                <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 group-hover:text-blue-500 dark:group-hover:text-blue-300" />
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  仅复制当前文件
+                </span>
+              </div>
+              <span className="text-[10px] text-blue-600 dark:text-blue-400/90 font-mono">
+                单文件包
+              </span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
-              onCopySingleFile?.(contextMenu.targetNode);
+              onRevealNodeInFileManager?.(contextMenu.targetNode);
               setContextMenu(null);
             }}
-            className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-600/30 hover:text-blue-600 dark:hover:text-white flex items-center justify-between space-x-2 transition-colors cursor-pointer group"
-            title="生成单文件文件上下文包并加入历史，不改变当前已有的勾选状态"
+            className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-600/30 hover:text-blue-600 dark:hover:text-white flex items-center space-x-2 transition-colors cursor-pointer group"
+            title="在系统文件管理器中打开此文件或文件夹"
           >
-            <div className="flex items-center space-x-2">
-              <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 group-hover:text-blue-500 dark:group-hover:text-blue-300" />
-              <span className="font-semibold text-slate-900 dark:text-slate-100">
-                仅复制当前文件
-              </span>
-            </div>
-            <span className="text-[10px] text-blue-600 dark:text-blue-400/90 font-mono">
-              单文件包
+            <ExternalLink className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 group-hover:text-blue-500 dark:group-hover:text-blue-300" />
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
+              在文件资源管理器中显示
             </span>
           </button>
 
@@ -555,7 +577,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         }`}
         title={
           node.type === 'file' && !isNodeBlocked
-            ? `${node.path} (右键可“仅复制当前文件”，空格切换勾选)`
+            ? `${node.path} (右键可复制当前文件或在文件资源管理器中显示，空格切换勾选)`
+            : node.type === 'directory' && !isNodeBlocked
+            ? `${node.path} (右键可在文件资源管理器中显示，空格展开/折叠)`
             : `${node.path} (空格展开/折叠)`
         }
       >

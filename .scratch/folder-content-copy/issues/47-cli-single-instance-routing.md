@@ -7,7 +7,7 @@
 **阻塞于：** [初始化 Tauri 应用与功能路由](45-bootstrap-tauri-shell.md)、[将 playground 页面迁入桌面应用](46-port-playground-ui.md)
 
 **状态：** completed
-**标签：** ready-for-agent
+**标签：** completed
 
 - [x] 使用 Tauri 官方单实例能力；支持 `kbcapp --route <功能路径>`，AHK、PowerShell 与其他命令行使用相同参数格式。
 - [x] 无参数启动默认打开 `/folder-copy`；冷启动和运行中收到的功能路径均通过注册路由白名单校验。

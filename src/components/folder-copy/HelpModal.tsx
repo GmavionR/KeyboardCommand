@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, Monitor, Settings, Copy } from 'lucide-react';
+import { X, BookOpen, Monitor, Settings, Copy, FolderTree } from 'lucide-react';
 
 interface HelpModalProps {
   isOpen: boolean;
@@ -86,6 +86,17 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
               • 执行后，<strong className="text-slate-900 dark:text-slate-200">只读取并复制右键所在文件</strong>，生成单文件文件上下文包，沿用现有格式。<br />
               • 按普通复制流程<strong className="text-slate-900 dark:text-slate-200">新增一条历史记录</strong>并复制到剪贴板。<br />
               • <strong className="text-emerald-700 dark:text-emerald-300 font-medium">操作绝对不改变当前已有的文件或文件夹选择勾选状态</strong>。
+            </p>
+          </div>
+
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3 bg-slate-50 dark:bg-slate-950/40 space-y-1.5">
+            <div className="flex items-center gap-2 font-semibold text-blue-600 dark:text-blue-400">
+              <FolderTree className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+              <span>5. 在系统文件管理器中显示</span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              • 仅有效可选文件与文件夹节点显示该操作；忽略或排除的文件夹不显示且无右键行为。<br />
+              • 文件节点打开所在目录并定位文件，文件夹节点直接打开该文件夹。操作不改变现有勾选状态；打开失败时显示错误提示。
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import {
   FileNode,
@@ -677,6 +678,23 @@ export default function App() {
     );
   };
 
+  const handleRevealNodeInFileManager = async (node: FileNode) => {
+    const absoluteNodePath = `${currentPath.replace(/[\\/]+$/, '')}\\${node.path.replace(/\//g, '\\')}`;
+    try {
+      if (node.type === 'file') {
+        await revealItemInDir(absoluteNodePath);
+      } else {
+        await openPath(absoluteNodePath);
+      }
+    } catch (error) {
+      showToast(
+        'error',
+        '无法在文件资源管理器中显示',
+        `${absoluteNodePath}\n${String(error)}`
+      );
+    }
+  };
+
   // Save Settings to SQLite
   const handleSaveSettings = async (newSettings: SettingsConfig): Promise<boolean> => {
     await new Promise((res) => setTimeout(res, 350));
@@ -763,6 +781,7 @@ export default function App() {
                   onToggleExpandFolder={handleToggleExpandFolder}
                   onLoadMore={handleLoadMoreChildren}
                   onCopySingleFile={handleCopySingleFile}
+                  onRevealNodeInFileManager={handleRevealNodeInFileManager}
                   onExpandAll={handleExpandAllFolders}
                   onCollapseAll={handleCollapseAllFolders}
                   onSelectAllValid={handleSelectAllAllowedFiles}
@@ -878,6 +897,7 @@ export default function App() {
                   onToggleExpandFolder={handleToggleExpandFolder}
                   onLoadMore={handleLoadMoreChildren}
                   onCopySingleFile={handleCopySingleFile}
+                  onRevealNodeInFileManager={handleRevealNodeInFileManager}
                   onExpandAll={handleExpandAllFolders}
                   onCollapseAll={handleCollapseAllFolders}
                   onSelectAllValid={handleSelectAllAllowedFiles}
