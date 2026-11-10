@@ -2,7 +2,8 @@ import Database from '@tauri-apps/plugin-sql';
 import { SettingsConfig } from '../types';
 import { DEFAULT_SETTINGS } from './defaultSettings';
 
-const DATABASE_PATH = 'sqlite:settings.db';
+export const DATABASE_FILE_NAME = 'settings.db';
+const DATABASE_PATH = `sqlite:${DATABASE_FILE_NAME}`;
 
 interface StoredSettingsRow {
   settings_json: string;

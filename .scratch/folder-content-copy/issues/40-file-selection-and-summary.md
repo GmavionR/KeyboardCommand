@@ -7,7 +7,7 @@
 **状态：** ready-for-agent
 **标签：** ready-for-agent
 
-**设计来源：** `playground/KeyboardCommand_Folder_Copy/docs/design.md` 是文件树和选择面板 UI/交互的当前基准；选择规则见 `.scratch/folder-content-copy/spec.md`。
+**设计来源：** `E:\DevProjects\LocalProjects\tauriProjects\KeyboardCommand_Folder_Copy\docs\design.md` 是文件树和选择面板 UI/交互的当前基准；该演示项目的 React 代码仅作 UI/交互参考。选择规则见 `.scratch/folder-content-copy/spec.md`。
 
 - [ ] 单击文件切换其选择；选择目录递归纳入符合当前规则、未被排除且不在忽略目录下的文件。
 - [ ] 目录根据可选后代显示全选、部分选中或未选中状态；目录选择与文件规则变更保持一致。

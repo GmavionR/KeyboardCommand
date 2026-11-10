@@ -76,7 +76,7 @@ Status: ready-for-agent
 
 ## 补充说明
 
-- 当前 UI 与交互基准文件为 [`playground/KeyboardCommand_Folder_Copy/docs/design.md`](../../playground/KeyboardCommand_Folder_Copy/docs/design.md)，React 原型同目录下的 `src/` 使用 mock data，只作为 UI/交互参考，不能视作 Rust 后端实现。
+- **外部 UI 演示项目：** `E:\DevProjects\LocalProjects\tauriProjects\KeyboardCommand_Folder_Copy`。这是独立于本仓库的功能演示 playground，由外部 UI 设计工具根据“文件夹浏览与复制”功能讨论和已确认的产品需求生成。项目中的 `docs/design.md`（`E:\DevProjects\LocalProjects\tauriProjects\KeyboardCommand_Folder_Copy\docs\design.md`）说明该 UI 演示实现和展示的功能及交互，是本功能 UI/交互对照材料；同项目 `src/` 中的 React 演示代码使用 mock data，仅作 UI/交互参考，不能视作本仓库的正式实现或 Rust 后端实现。
 - 本规格中明确由 design.md 覆盖的旧决定包括 issue 31 的文件上下文包格式、issue 22 的搜索结果 Enter 关闭/切换行为，以及 issue 36 的文件树 Enter/左右方向键行为。尚未被覆盖的已确认文件筛选、历史、设置和应用外壳决定继续有效。
 - 与项目需求背景、架构约束及领域术语的关系见 [`PROJECT_REQUIREMENTS.md`](../../PROJECT_REQUIREMENTS.md)、[`GLOSSARY.md`](../../GLOSSARY.md) 和 [`docs/adr/`](../../docs/adr/)。
 - 实施任务拆分见 [初始化桌面应用并接入现有页面](issues/37-application-shell-and-ui.md) 至 [接入系统设置与桌面能力](issues/44-system-settings-and-desktop-integrations.md)。

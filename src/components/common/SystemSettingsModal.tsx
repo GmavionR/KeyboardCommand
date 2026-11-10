@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { appConfigDir, join } from '@tauri-apps/api/path';
 import {
   X,
   Sun,
@@ -12,6 +13,7 @@ import {
   Laptop,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
+import { DATABASE_FILE_NAME } from '../../data/settingsDatabase';
 
 interface SystemSettingsModalProps {
   isOpen: boolean;
@@ -28,6 +30,29 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [launchAtStartup, setLaunchAtStartup] = useState(false);
   const [desktopNotification, setDesktopNotification] = useState(true);
+  const [databasePath, setDatabasePath] = useState<string | null>(null);
+  const [databasePathError, setDatabasePathError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    setDatabasePath(null);
+    setDatabasePathError(null);
+
+    void appConfigDir()
+      .then((configDirectory) => join(configDirectory, DATABASE_FILE_NAME))
+      .then((path) => {
+        if (!cancelled) setDatabasePath(path);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setDatabasePathError(String(error));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -197,8 +222,11 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-1">
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">数据库存储路径</div>
-                <div className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate">
-                  %APPDATA%/kbc-app/settings.db
+                <div
+                  className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate"
+                  title={databasePathError ?? databasePath ?? undefined}
+                >
+                  {databasePath ?? (databasePathError ? '无法获取应用配置目录' : '正在获取…')}
                 </div>
               </div>
               <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-1">
