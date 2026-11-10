@@ -737,13 +737,19 @@ export default function App() {
     setIsSettingsSaving(true);
     try {
       await saveFolderCopySettings(newSettings);
+      if (currentPath) {
+        const reloaded = await loadFolder(currentPath, newSettings);
+        if (!reloaded) {
+          throw new Error('设置已写入 SQLite，但当前目录重新加载失败。请重试以应用新设置。');
+        }
+      } else {
+        showToast(
+          'success',
+          '设置已保存至 SQLite',
+          `大目录阈值: ${newSettings.largeDirThreshold} | 白名单: ${newSettings.whitelist.length} 项`
+        );
+      }
       setSettings(newSettings);
-      const reloaded = currentPath ? await loadFolder(currentPath, newSettings) : true;
-      showToast(
-        reloaded ? 'success' : 'error',
-        reloaded ? '设置已保存至 SQLite 并重新加载规则' : '设置已保存，但当前目录重新加载失败',
-        `大目录阈值: ${newSettings.largeDirThreshold} | 白名单: ${newSettings.whitelist.length} 项`
-      );
       return true;
     } finally {
       setIsSettingsSaving(false);

@@ -200,10 +200,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           onClose();
         }, 700);
       } else {
-        setErrorMessage('SQLite 保存失败，请检查数据库权限后重试');
+        setErrorMessage('设置保存或应用失败，草稿和当前页面状态已保留');
       }
     } catch (error) {
-      setErrorMessage('SQLite 保存失败，设置草稿和当前页面状态已保留');
+      setErrorMessage('设置保存或应用失败，草稿和当前页面状态已保留');
       setErrorDetails(String(error));
     }
   };
