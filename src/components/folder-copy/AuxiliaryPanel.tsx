@@ -11,6 +11,7 @@ interface AuxiliaryPanelProps {
   onChangeView: (view: AuxiliaryView) => void;
   // Selection List Props
   selectedPaths: Set<string>;
+  selectedSizes: Map<string, number>;
   rootNode: FileNode;
   onRemovePath: (path: string) => void;
   onClearAll: () => void;
@@ -29,6 +30,7 @@ export const AuxiliaryPanel: React.FC<AuxiliaryPanelProps> = ({
   activeView,
   onChangeView,
   selectedPaths,
+  selectedSizes,
   rootNode,
   onRemovePath,
   onClearAll,
@@ -103,6 +105,7 @@ export const AuxiliaryPanel: React.FC<AuxiliaryPanelProps> = ({
         {activeView === 'selection' ? (
           <SelectionList
             selectedPaths={selectedPaths}
+            selectedSizes={selectedSizes}
             rootNode={rootNode}
             onRemovePath={onRemovePath}
             onClearAll={onClearAll}

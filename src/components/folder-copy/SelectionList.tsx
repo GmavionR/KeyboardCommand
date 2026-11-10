@@ -1,4 +1,5 @@
 import React from 'react';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   FileCheck2,
   Trash2,
@@ -12,6 +13,7 @@ import { findNodeByPath, formatBytes } from '../../utils/treeUtils';
 
 interface SelectionListProps {
   selectedPaths: Set<string>;
+  selectedSizes: Map<string, number>;
   rootNode: FileNode;
   onRemovePath: (path: string) => void;
   onClearAll: () => void;
@@ -21,6 +23,7 @@ interface SelectionListProps {
 
 export const SelectionList: React.FC<SelectionListProps> = ({
   selectedPaths,
+  selectedSizes,
   rootNode,
   onRemovePath,
   onClearAll,
@@ -30,18 +33,24 @@ export const SelectionList: React.FC<SelectionListProps> = ({
   const selectedArray = Array.from(selectedPaths);
   const totalCount = selectedArray.length;
   const [copiedPathsList, setCopiedPathsList] = React.useState(false);
+  const [copyPathsError, setCopyPathsError] = React.useState(false);
 
   const totalBytes = selectedArray.reduce(
-    (acc, p) => acc + (findNodeByPath(rootNode, p)?.size || 2048),
+    (acc, p) => acc + (selectedSizes.get(p) ?? findNodeByPath(rootNode, p)?.size ?? 0),
     0
   );
-  const estimatedTokens = Math.round(totalBytes / 3.8);
 
-  const handleCopyPathsList = () => {
+  const handleCopyPathsList = async () => {
     if (selectedArray.length === 0) return;
-    navigator.clipboard.writeText(selectedArray.join('\n'));
-    setCopiedPathsList(true);
-    setTimeout(() => setCopiedPathsList(false), 1800);
+    setCopyPathsError(false);
+    try {
+      await writeText(selectedArray.join('\n'));
+      setCopiedPathsList(true);
+      setTimeout(() => setCopiedPathsList(false), 1800);
+    } catch {
+      setCopiedPathsList(false);
+      setCopyPathsError(true);
+    }
   };
 
   return (
@@ -63,7 +72,7 @@ export const SelectionList: React.FC<SelectionListProps> = ({
                 className="flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-300 dark:border-slate-700 transition-colors cursor-pointer"
                 title="复制全部勾选文件的相对路径清单 (换行分隔)"
               >
-                <span>{copiedPathsList ? '已复制路径' : '复制路径'}</span>
+                <span>{copyPathsError ? '复制失败' : copiedPathsList ? '已复制路径' : '复制路径'}</span>
               </button>
               <button
                 onClick={onPreviewPackage}
@@ -119,9 +128,9 @@ export const SelectionList: React.FC<SelectionListProps> = ({
                     <span className="font-semibold text-slate-900 dark:text-slate-100 truncate text-[11px]">
                       {fileName}
                     </span>
-                    {node?.size && (
+                    {(selectedSizes.has(path) || node?.size !== undefined) && (
                       <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                        ({formatBytes(node.size)})
+                        ({formatBytes(selectedSizes.get(path) ?? node?.size)})
                       </span>
                     )}
                   </div>
@@ -153,8 +162,6 @@ export const SelectionList: React.FC<SelectionListProps> = ({
           <span>共 <strong className="tabular-nums font-mono text-slate-800 dark:text-slate-200">{totalCount}</strong> 个文件待打包</span>
           <div className="flex items-center space-x-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono tabular-nums">
             <span>~{formatBytes(totalBytes)}</span>
-            <span>·</span>
-            <span title="基于代码字符密度的估算 Token 数量">约 {estimatedTokens.toLocaleString()} tokens</span>
           </div>
         </div>
       )}

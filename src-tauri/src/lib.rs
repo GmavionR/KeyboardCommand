@@ -66,6 +66,27 @@ struct DirectoryEntry {
     extension: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SelectableFile {
+    path: String,
+    size: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectorySelectableCount {
+    path: String,
+    count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SelectableFiles {
+    files: Vec<SelectableFile>,
+    directory_counts: Vec<DirectorySelectableCount>,
+}
+
 impl ActivationRequest {
     fn valid(route: &str) -> Self {
         Self {
@@ -398,6 +419,89 @@ async fn load_directory_page(
     .map_err(|error| error.to_string())?
 }
 
+fn collect_selectable_files(
+    directory: &Path,
+    relative_directory: &str,
+    settings: &TreeSettings,
+    files: &mut Vec<SelectableFile>,
+    directory_counts: &mut Vec<DirectorySelectableCount>,
+) -> Result<(), String> {
+    let initial_count = files.len();
+    let entries =
+        fs::read_dir(directory).map_err(|error| user_error("读取目录", directory, error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| user_error("读取目录项", directory, error))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| user_error("读取目录项属性", &entry.path(), error))?;
+        if file_type.is_symlink() || (!file_type.is_file() && !file_type.is_dir()) {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let relative_path = if relative_directory.is_empty() {
+            name.clone()
+        } else {
+            format!("{relative_directory}/{name}")
+        };
+
+        if file_type.is_dir() {
+            let (is_ignored, _, is_excluded, _) = directory_block_reason(&name, settings);
+            if !is_ignored && !is_excluded {
+                collect_selectable_files(
+                    &entry.path(),
+                    &relative_path,
+                    settings,
+                    files,
+                    directory_counts,
+                )?;
+            }
+        } else if is_allowed_file(&name, settings) {
+            let size = entry
+                .metadata()
+                .map_err(|error| user_error("读取文件信息", &entry.path(), error))?
+                .len();
+            files.push(SelectableFile {
+                path: relative_path,
+                size,
+            });
+        }
+    }
+    directory_counts.push(DirectorySelectableCount {
+        path: relative_directory.to_string(),
+        count: files.len() - initial_count,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_selectable_files(
+    root_path: String,
+    relative_path: String,
+    settings: TreeSettings,
+) -> Result<SelectableFiles, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (_, target) = validated_directory(&root_path, &relative_path, &settings)?;
+        let mut files = Vec::new();
+        let mut directory_counts = Vec::new();
+        collect_selectable_files(
+            &target,
+            &relative_path,
+            &settings,
+            &mut files,
+            &mut directory_counts,
+        )?;
+        files.sort_by(|left, right| left.path.cmp(&right.path));
+        directory_counts.sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(SelectableFiles {
+            files,
+            directory_counts,
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_request = parse_activation_args(std::env::args().skip(1));
@@ -412,6 +516,7 @@ pub fn run() {
     }];
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(initial_request)
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -434,7 +539,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             initial_activation,
             load_directory_tree,
-            load_directory_page
+            load_directory_page,
+            list_selectable_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

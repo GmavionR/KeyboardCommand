@@ -40,6 +40,7 @@ Status: resolved
 - [定义树节点右键菜单的单文件复制行为](issues/35-copy-file-from-tree-context-menu.md)：可选文件节点可单独复制为单文件文件上下文包并新增历史，不影响现有选择。
 - [定义树节点在系统文件管理器中的显示行为](issues/37-reveal-tree-node-in-file-manager.md)：有效文件可显示在其所在目录，文件夹直接打开；忽略和排除文件夹不提供右键操作，且不改变勾选状态。
 - [定义文件树的键盘焦点和空格键行为](issues/36-file-tree-keyboard-navigation.md)：上下键只移动焦点；空格对文件夹展开/关闭，对文件选中/取消选中。
+- [完成文件选择与选择清单](issues/40-file-selection-and-summary.md)：递归选择和目录三态、选择面板单项移除及大小统计；通过 Tauri 官方 clipboard-manager 复制相对路径清单并反馈操作结果；历史时间使用相对格式，文件大小不写入文件上下文包。不实现 Token 估算。
 - [同一文件夹可保留多条历史，全局上限为 20 条](issues/07-history-cardinality.md)：打开文件夹时恢复其最新历史记录中的选择。
 - [将单实例和外部激活纳入应用外壳范围](issues/08-app-shell-scope.md)：将其纳入首版应用外壳；CLI/AHK 激活方式见 issue 19。
 - [将复制历史快照保存为文件](issues/17-choose-history-storage.md)：复制正文保存为文件快照；本功能配置使用 SQLite 查询和保存。

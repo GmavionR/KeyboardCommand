@@ -66,22 +66,34 @@ export function isFileAllowed(
 export function getNodeTriState(
   node: FileNode,
   selectedPaths: Set<string>,
-  settings: SettingsConfig
+  settings: SettingsConfig,
+  selectableCounts: Map<string, number> = new Map(),
 ): 'checked' | 'unchecked' | 'indeterminate' {
   if (node.type === 'file') {
     return selectedPaths.has(node.path) ? 'checked' : 'unchecked';
   }
   if (node.isIgnored) return 'unchecked';
 
-  const allFiles = getAllSelectableFilesInNode(node, settings);
-  if (allFiles.length === 0) return 'unchecked';
+  const isWithinNode = (path: string) =>
+    node.path === '' || path.startsWith(`${node.path}/`);
+  const selectedCount = [...selectedPaths].filter(isWithinNode).length;
+  if (selectedCount === 0) return 'unchecked';
 
-  let selectedCount = 0;
-  for (const file of allFiles) {
-    if (selectedPaths.has(file)) selectedCount++;
+  const knownCount = selectableCounts.get(node.path);
+  if (knownCount !== undefined) {
+    if (selectedCount === knownCount) return 'checked';
+    return 'indeterminate';
   }
 
-  if (selectedCount === 0) return 'unchecked';
+  const allFiles = getAllSelectableFilesInNode(node, settings);
+  const hasUnloadedEligibleCandidates = (directory: FileNode): boolean => {
+    if (directory.type !== 'directory' || directory.isIgnored || directory.isExcluded) return false;
+    if (selectableCounts.has(directory.path)) return false;
+    if (directory.hasMoreChildren) return true;
+    if (directory.children === undefined && directory.path !== '' && !selectableCounts.has(directory.path)) return true;
+    return directory.children?.some(hasUnloadedEligibleCandidates) ?? false;
+  };
+  if (hasUnloadedEligibleCandidates(node)) return 'indeterminate';
   if (selectedCount === allFiles.length) return 'checked';
   return 'indeterminate';
 }
@@ -185,7 +197,7 @@ export function generateContextPackageMarkdown(
 
   selectedPaths.forEach((p) => {
     const node = findNodeByPath(rootNode, p);
-    const content = node?.content || `// 模拟读取自本地文件: ${p}\n// 文件大小: ${formatBytes(node?.size)}`;
+    const content = node?.content || `// 模拟读取自本地文件: ${p}`;
     const ext = p.split('.').pop() || '';
     const lang = ['ts', 'tsx', 'js', 'jsx', 'json', 'css', 'html', 'md', 'py', 'rs'].includes(ext) ? ext : '';
 

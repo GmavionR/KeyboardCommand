@@ -9,9 +9,9 @@ import {
   SettingsConfig,
   CopyHistoryItem,
   CopyFailureDetail,
+  SelectableFilesResult,
 } from './types';
 import {
-  getAllSelectableFilesInNode,
   isFileAllowed,
   findNodeByPath,
   generateContextPackageMarkdown,
@@ -89,6 +89,8 @@ export default function App() {
 
   // Selection & Tree State
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [selectedSizes, setSelectedSizes] = useState<Map<string, number>>(new Map());
+  const [selectableCounts, setSelectableCounts] = useState<Map<string, number>>(new Map());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
 
@@ -171,7 +173,11 @@ export default function App() {
       setExpandedFolders(new Set());
       setHighlightedPath(null);
       setLoadingPaths(new Set());
-      if (!sameFolder) setSelectedPaths(new Set());
+      if (!sameFolder) {
+        setSelectedPaths(new Set());
+        setSelectedSizes(new Map());
+        setSelectableCounts(new Map());
+      }
       setRecentFolders((previous) =>
         [requestedPath, ...previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(requestedPath))].slice(0, 10)
       );
@@ -219,6 +225,8 @@ export default function App() {
         setIsSearchIncomplete(false);
         setForcedSearchQuery('');
         setSelectedPaths(new Set());
+        setSelectedSizes(new Map());
+        setSelectableCounts(new Map());
         setExpandedFolders(new Set());
         setAuxiliaryView('selection');
         setNarrowActiveTab('tree');
@@ -252,6 +260,8 @@ export default function App() {
         setIsFdAvailable(true);
         setIsSearchIncomplete(false);
         setSelectedPaths(new Set());
+        setSelectedSizes(new Map());
+        setSelectableCounts(new Map());
         setAuxiliaryView('selection');
         if (viewportMode === 'narrow') setNarrowActiveTab('selection');
         showToast('info', '已切换到空选择态', '复制文件上下文包按钮已根据规范禁用');
@@ -261,6 +271,8 @@ export default function App() {
         setIsFdAvailable(true);
         setIsSearchIncomplete(false);
         setSelectedPaths(new Set());
+        setSelectedSizes(new Map());
+        setSelectableCounts(new Map());
         if (viewportMode === 'narrow') setNarrowActiveTab('tree');
         showToast('info', '已清空当前选择', '目录内容仍来自当前真实文件夹');
         break;
@@ -333,29 +345,55 @@ export default function App() {
 
   // Toggle single file selection
   const handleToggleFileSelect = (path: string) => {
+    const node = findNodeByPath(rootNode, path);
+    const isSelected = selectedPaths.has(path);
     setSelectedPaths((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
+      if (isSelected) next.delete(path);
+      else next.add(path);
       return next;
+    });
+    setSelectedSizes((sizes) => {
+      const updated = new Map(sizes);
+      if (isSelected) updated.delete(path);
+      else updated.set(path, node?.size ?? 0);
+      return updated;
     });
   };
 
   // Recursive toggle for folder (all selectable valid files)
-  const handleToggleFolderRecursive = (node: FileNode, shouldSelect: boolean) => {
-    const validFiles = getAllSelectableFilesInNode(node, settings);
-    setSelectedPaths((prev) => {
-      const next = new Set(prev);
-      if (shouldSelect) {
-        validFiles.forEach((f) => next.add(f));
-      } else {
-        validFiles.forEach((f) => next.delete(f));
-      }
-      return next;
-    });
+  const handleToggleFolderRecursive = async (node: FileNode, shouldSelect: boolean) => {
+    if (!currentPath) return;
+    const requestVersion = folderLoadVersion.current;
+    try {
+      const result = await invoke<SelectableFilesResult>('list_selectable_files', {
+        rootPath: currentPath,
+        relativePath: node.path,
+        settings,
+      });
+      if (requestVersion !== folderLoadVersion.current) return;
+      const validFiles = result.files;
+      setSelectedPaths((previous) => {
+        const next = new Set(previous);
+        if (shouldSelect) {
+          validFiles.forEach((file) => next.add(file.path));
+        } else validFiles.forEach((file) => next.delete(file.path));
+        return next;
+      });
+      setSelectedSizes((previous) => {
+        const sizes = new Map(previous);
+        if (shouldSelect) validFiles.forEach((file) => sizes.set(file.path, file.size));
+        else validFiles.forEach((file) => sizes.delete(file.path));
+        return sizes;
+      });
+      setSelectableCounts((previous) => {
+        const counts = new Map(previous);
+        result.directoryCounts.forEach(({ path, count }) => counts.set(path, count));
+        return counts;
+      });
+    } catch (error) {
+      showToast('error', '无法递归读取目录文件', String(error));
+    }
   };
 
   // Expand a directory lazily, fetching its first page only when needed.
@@ -467,10 +505,23 @@ export default function App() {
   };
 
   // Batch Select all valid allowed files in tree
-  const handleSelectAllAllowedFiles = () => {
-    const valid = getAllSelectableFilesInNode(rootNode, settings);
-    setSelectedPaths(new Set(valid));
-    showToast('success', `已全选符合规则的文件 (共 ${valid.length} 个)`);
+  const handleSelectAllAllowedFiles = async () => {
+    if (!currentPath) return;
+    const requestVersion = folderLoadVersion.current;
+    try {
+      const result = await invoke<SelectableFilesResult>('list_selectable_files', {
+        rootPath: currentPath,
+        relativePath: '',
+        settings,
+      });
+      if (requestVersion !== folderLoadVersion.current) return;
+      setSelectedPaths(new Set(result.files.map((file) => file.path)));
+      setSelectedSizes(new Map(result.files.map((file) => [file.path, file.size])));
+      setSelectableCounts(new Map(result.directoryCounts.map(({ path, count }) => [path, count])));
+      showToast('success', `已全选符合规则的文件 (共 ${result.files.length} 个)`);
+    } catch (error) {
+      showToast('error', '无法全选符合规则的文件', String(error));
+    }
   };
 
   // Locate node in tree and expand all ancestors
@@ -498,11 +549,17 @@ export default function App() {
       next.delete(path);
       return next;
     });
+    setSelectedSizes((previous) => {
+      const next = new Map(previous);
+      next.delete(path);
+      return next;
+    });
   };
 
   // Clear all selections
   const handleClearAllSelections = () => {
     setSelectedPaths(new Set());
+    setSelectedSizes(new Map());
     showToast('info', '已清空全部所选文件');
   };
 
@@ -763,6 +820,15 @@ export default function App() {
           });
           return new Set(remaining);
         });
+        setSelectedSizes((previous) => {
+          const remaining = new Map(previous);
+          for (const path of remaining.keys()) {
+            const filename = path.split(/[\\/]/).pop() ?? path;
+            if (!isFileAllowed(filename, path, newSettings)) remaining.delete(path);
+          }
+          return remaining;
+        });
+        setSelectableCounts(new Map());
       }
       if (currentPath) {
         setIsFolderLoaded(true);
@@ -848,6 +914,7 @@ export default function App() {
                   loadingPaths={loadingPaths}
                   settings={settings}
                   selectedPaths={selectedPaths}
+                  selectableCounts={selectableCounts}
                   onToggleFile={handleToggleFileSelect}
                   onToggleFolderRecursive={handleToggleFolderRecursive}
                   highlightedPath={highlightedPath}
@@ -870,6 +937,7 @@ export default function App() {
                 activeView={auxiliaryView}
                 onChangeView={setAuxiliaryView}
                 selectedPaths={selectedPaths}
+                selectedSizes={selectedSizes}
                 rootNode={rootNode}
                 onRemovePath={handleRemoveSelectedPath}
                 onClearAll={handleClearAllSelections}
@@ -964,6 +1032,7 @@ export default function App() {
                   loadingPaths={loadingPaths}
                   settings={settings}
                   selectedPaths={selectedPaths}
+                  selectableCounts={selectableCounts}
                   onToggleFile={handleToggleFileSelect}
                   onToggleFolderRecursive={handleToggleFolderRecursive}
                   highlightedPath={highlightedPath}
@@ -982,6 +1051,7 @@ export default function App() {
               {narrowActiveTab === 'selection' && (
                 <SelectionList
                   selectedPaths={selectedPaths}
+                  selectedSizes={selectedSizes}
                   rootNode={rootNode}
                   onRemovePath={handleRemoveSelectedPath}
                   onClearAll={handleClearAllSelections}
@@ -1049,6 +1119,11 @@ export default function App() {
               const rel = fp.replace(currentPath + '\\', '').replace(/\\/g, '/');
               next.delete(rel);
             });
+            return next;
+          });
+          setSelectedSizes((previous) => {
+            const next = new Map(previous);
+            failedPaths.forEach((fp) => next.delete(fp.replace(currentPath + '\\', '').replace(/\\/g, '/')));
             return next;
           });
           setIsFailureDialogOpen(false);

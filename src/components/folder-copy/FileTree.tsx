@@ -34,6 +34,7 @@ interface FileTreeProps {
   loadingPaths: Set<string>;
   settings: SettingsConfig;
   selectedPaths: Set<string>;
+  selectableCounts: Map<string, number>;
   onToggleFile: (path: string) => void;
   onToggleFolderRecursive: (node: FileNode, shouldSelect: boolean) => void;
   highlightedPath?: string | null;
@@ -80,6 +81,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   loadingPaths,
   settings,
   selectedPaths,
+  selectableCounts,
   onToggleFile,
   onToggleFolderRecursive,
   highlightedPath,
@@ -375,6 +377,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
           depth={0}
           settings={settings}
           selectedPaths={selectedPaths}
+          selectableCounts={selectableCounts}
           onToggleFile={onToggleFile}
           onToggleFolderRecursive={onToggleFolderRecursive}
           highlightedPath={highlightedPath}
@@ -461,6 +464,7 @@ interface TreeNodeProps {
   depth: number;
   settings: SettingsConfig;
   selectedPaths: Set<string>;
+  selectableCounts: Map<string, number>;
   onToggleFile: (path: string) => void;
   onToggleFolderRecursive: (node: FileNode, shouldSelect: boolean) => void;
   highlightedPath?: string | null;
@@ -478,6 +482,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   depth,
   settings,
   selectedPaths,
+  selectableCounts,
   onToggleFile,
   onToggleFolderRecursive,
   highlightedPath,
@@ -501,7 +506,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
   const triState =
     node.type === 'directory'
-      ? getNodeTriState(node, selectedPaths, settings)
+      ? getNodeTriState(node, selectedPaths, settings, selectableCounts)
       : selectedPaths.has(node.path)
       ? 'checked'
       : 'unchecked';
@@ -725,6 +730,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 depth={depth + 1}
                 settings={settings}
                 selectedPaths={selectedPaths}
+                selectableCounts={selectableCounts}
                 onToggleFile={onToggleFile}
                 onToggleFolderRecursive={onToggleFolderRecursive}
                 highlightedPath={highlightedPath}

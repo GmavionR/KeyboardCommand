@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   History,
   Copy,
@@ -10,6 +10,27 @@ import {
   Check,
 } from 'lucide-react';
 import { CopyHistoryItem } from '../../types';
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'always' });
+
+function formatRelativeTime(timestamp: number, now: number): string {
+  const difference = timestamp - now;
+  const distance = Math.abs(difference);
+  if (distance < 60_000) return '刚刚';
+
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 365 * 24 * 60 * 60 * 1000],
+    ['month', 30 * 24 * 60 * 60 * 1000],
+    ['week', 7 * 24 * 60 * 60 * 1000],
+    ['day', 24 * 60 * 60 * 1000],
+    ['hour', 60 * 60 * 1000],
+    ['minute', 60 * 1000],
+  ];
+  const [unit, unitMilliseconds] =
+    units.find(([, milliseconds]) => distance >= milliseconds) ?? units[units.length - 1];
+  const value = Math.round(difference / unitMilliseconds);
+  return value === 0 ? '刚刚' : relativeTimeFormatter.format(value, unit);
+}
 
 interface HistoryPanelProps {
   historyList: CopyHistoryItem[];
@@ -31,6 +52,12 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [filterScope, setFilterScope] = useState<'current' | 'all'>('current');
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [, setClockNow] = useState(Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setClockNow(Date.now()), 30_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   // Filter list
   const filteredList =
@@ -108,7 +135,13 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-1.5">
                   <div className="flex items-center space-x-1.5">
                     <Clock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-                    <span className="font-mono text-slate-700 dark:text-slate-300">{item.createdAt}</span>
+                    <time
+                      className="text-slate-700 dark:text-slate-300"
+                      dateTime={new Date(item.timestamp).toISOString()}
+                      title={new Date(item.timestamp).toLocaleString('zh-CN')}
+                    >
+                      {formatRelativeTime(item.timestamp, Date.now())}
+                    </time>
                     <span className="text-slate-300 dark:text-slate-600">•</span>
                     <span className="text-blue-600 dark:text-blue-400 font-medium">
                       {item.fileCount} 个文件

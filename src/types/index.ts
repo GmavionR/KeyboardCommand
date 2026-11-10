@@ -16,6 +16,16 @@ export interface FileNode {
   content?: string; // mock file content
 }
 
+export interface SelectableFile {
+  path: string;
+  size: number;
+}
+
+export interface SelectableFilesResult {
+  files: SelectableFile[];
+  directoryCounts: { path: string; count: number }[];
+}
+
 export interface SearchResultItem {
   id: string;
   name: string;
