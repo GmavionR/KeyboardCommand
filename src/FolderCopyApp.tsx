@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
+import { loadFolderCopySettings, saveFolderCopySettings } from './data/settingsDatabase';
 import {
   FileNode,
   SettingsConfig,
@@ -70,6 +71,10 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState('');
   const [recentFolders, setRecentFolders] = useState<string[]>([]);
   const [settings, setSettings] = useState<SettingsConfig>({ ...DEFAULT_SETTINGS });
+  const [isSettingsInitialized, setIsSettingsInitialized] = useState(false);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
+  const [isSettingsSaving, setIsSettingsSaving] = useState(false);
   const [rootNode, setRootNode] = useState<FileNode>({
     id: 'root',
     name: '',
@@ -131,19 +136,30 @@ export default function App() {
     []
   );
 
-  const loadFolder = useCallback(async (targetPath: string) => {
+  const loadFolder = useCallback(async (targetPath: string, requestedSettings?: SettingsConfig) => {
     const requestedPath = targetPath.trim();
     if (!requestedPath) {
       showToast('error', '路径不能为空', '请输入有效的文件夹完整路径');
-      return;
+      return false;
     }
 
     const requestVersion = ++folderLoadVersion.current;
     setIsLoadingFolder(true);
     try {
+      let activeSettings = requestedSettings ?? settings;
+      if (!requestedSettings && !isSettingsInitialized) {
+        try {
+          activeSettings = await loadFolderCopySettings();
+        } catch (error) {
+          showToast('error', '无法加载文件规则设置', String(error));
+          return false;
+        }
+        setSettings(activeSettings);
+        setIsSettingsInitialized(true);
+      }
       const tree = await invoke<FileNode>('load_directory_tree', {
         rootPath: requestedPath,
-        settings,
+        settings: activeSettings,
       });
       if (requestVersion !== folderLoadVersion.current) return;
 
@@ -159,14 +175,35 @@ export default function App() {
         [requestedPath, ...previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(requestedPath))].slice(0, 10)
       );
       showToast('success', sameFolder ? '已重新载入文件夹' : '已加载指定文件夹', requestedPath);
+      return true;
     } catch (error) {
       if (requestVersion === folderLoadVersion.current) {
         showToast('error', '无法读取该文件夹', String(error));
       }
+      return false;
     } finally {
       if (requestVersion === folderLoadVersion.current) setIsLoadingFolder(false);
     }
-  }, [currentPath, settings, showToast]);
+  }, [currentPath, isSettingsInitialized, settings, showToast]);
+
+  const handleLoadSettings = async () => {
+    setIsSettingsLoading(true);
+    setSettingsLoadError(null);
+    try {
+      const savedSettings = await loadFolderCopySettings();
+      setSettings(savedSettings);
+      setIsSettingsInitialized(true);
+    } catch (error) {
+      setSettingsLoadError(String(error));
+    } finally {
+      setIsSettingsLoading(false);
+    }
+  };
+
+  const handleOpenSettings = () => {
+    setIsSettingsOpen(true);
+    void handleLoadSettings();
+  };
 
   // Preset switching logic
   const handleSelectPreset = (preset: DesignStatePreset) => {
@@ -266,7 +303,7 @@ export default function App() {
         break;
 
       case 'settings_open':
-        setIsSettingsOpen(true);
+        handleOpenSettings();
         break;
 
       case 'copy_single_file':
@@ -697,14 +734,20 @@ export default function App() {
 
   // Save Settings to SQLite
   const handleSaveSettings = async (newSettings: SettingsConfig): Promise<boolean> => {
-    await new Promise((res) => setTimeout(res, 350));
-    setSettings(newSettings);
-    showToast(
-      'success',
-      '设置已保存至 SQLite 并重新加载规则',
-      `大目录阈值: ${newSettings.largeDirThreshold} | 白名单: ${newSettings.whitelist.length} 项`
-    );
-    return true;
+    setIsSettingsSaving(true);
+    try {
+      await saveFolderCopySettings(newSettings);
+      setSettings(newSettings);
+      const reloaded = currentPath ? await loadFolder(currentPath, newSettings) : true;
+      showToast(
+        reloaded ? 'success' : 'error',
+        reloaded ? '设置已保存至 SQLite 并重新加载规则' : '设置已保存，但当前目录重新加载失败',
+        `大目录阈值: ${newSettings.largeDirThreshold} | 白名单: ${newSettings.whitelist.length} 项`
+      );
+      return true;
+    } finally {
+      setIsSettingsSaving(false);
+    }
   };
 
   return (
@@ -727,7 +770,7 @@ export default function App() {
         currentPath={currentPath}
         onChangePath={handleManualChangePath}
         onRefreshFolder={handleRefreshFolder}
-        onOpenPageSettings={() => setIsSettingsOpen(true)}
+        onOpenPageSettings={handleOpenSettings}
         recentFolders={recentFolders}
         onSelectRecentFolder={handleSelectRecentFolder}
         onOpenFolderDialog={handleOpenFolderDialog}
@@ -941,9 +984,16 @@ export default function App() {
       {/* 7. Page Rules Settings Modal: Whitelist, Exclusions, Ignored Dirs, Positive Integer Threshold */}
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setSettingsLoadError(null);
+        }}
         currentSettings={settings}
         onSaveSettings={handleSaveSettings}
+        isSettingsLoading={isSettingsLoading}
+        settingsLoadError={settingsLoadError}
+        onRetryLoadSettings={handleLoadSettings}
+        isSqliteSaving={isSettingsSaving}
       />
 
       {/* 7.1 Global System Settings Modal: Theme, Software Updates, SQLite Status, System Shortcuts */}

@@ -401,9 +401,23 @@ async fn load_directory_page(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_request = parse_activation_args(std::env::args().skip(1));
+    let migrations = vec![tauri_plugin_sql::Migration {
+        version: 1,
+        description: "create_folder_copy_settings",
+        sql: "CREATE TABLE IF NOT EXISTS folder_copy_settings (\
+            id INTEGER PRIMARY KEY CHECK (id = 1),\
+            settings_json TEXT NOT NULL\
+        );",
+        kind: tauri_plugin_sql::MigrationKind::Up,
+    }];
 
     tauri::Builder::default()
         .manage(initial_request)
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:settings.db", migrations)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let request = parse_activation_args(args.into_iter().skip(1));

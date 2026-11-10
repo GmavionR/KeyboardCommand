@@ -26,6 +26,9 @@ interface SettingsModalProps {
   onClose: () => void;
   currentSettings: SettingsConfig;
   onSaveSettings: (newSettings: SettingsConfig) => Promise<boolean>;
+  isSettingsLoading?: boolean;
+  settingsLoadError?: string | null;
+  onRetryLoadSettings?: () => void;
   isSqliteSaving?: boolean;
 }
 
@@ -34,10 +37,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   currentSettings,
   onSaveSettings,
+  isSettingsLoading = false,
+  settingsLoadError = null,
+  onRetryLoadSettings,
   isSqliteSaving = false,
 }) => {
-  if (!isOpen) return null;
-
   // Local editable draft state
   const [draft, setDraft] = useState<SettingsConfig>({
     whitelist: [...currentSettings.whitelist],
@@ -80,10 +84,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setDraft((prev) => ({ ...prev, largeDirThreshold: num }));
   }, [thresholdInput]);
 
-  // SQLite Error state simulator (issue34)
-  const [simulateSqliteError, setSimulateSqliteError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || isSettingsLoading || settingsLoadError) return;
+    setDraft({
+      whitelist: [...currentSettings.whitelist],
+      exclusions: [...currentSettings.exclusions],
+      ignoredDirectories: [...currentSettings.ignoredDirectories],
+      largeDirThreshold: currentSettings.largeDirThreshold,
+    });
+    setThresholdInput(String(currentSettings.largeDirThreshold));
+    setErrorMessage(null);
+    setErrorDetails(null);
+  }, [currentSettings, isOpen, isSettingsLoading, settingsLoadError]);
 
   // Section 1: Whitelist operations
   const handleAddWhitelist = () => {
@@ -174,25 +190,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSave = async () => {
     if (thresholdError) return;
     setErrorMessage(null);
-
-    if (simulateSqliteError) {
-      setErrorMessage(
-        'SQLite 写入异常: disk I/O error (SQLITE_IOERR: 数据库文件被占用或写锁超时)'
-      );
-      return;
-    }
-
-    const success = await onSaveSettings(draft);
-    if (success) {
-      setSaveSuccess(true);
-      setTimeout(() => {
-        setSaveSuccess(false);
-        onClose();
-      }, 700);
-    } else {
-      setErrorMessage('SQLite 持久化失败，请检查数据库权限或重试');
+    setErrorDetails(null);
+    try {
+      const success = await onSaveSettings(draft);
+      if (success) {
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+          onClose();
+        }, 700);
+      } else {
+        setErrorMessage('SQLite 保存失败，请检查数据库权限后重试');
+      }
+    } catch (error) {
+      setErrorMessage('SQLite 保存失败，设置草稿和当前页面状态已保留');
+      setErrorDetails(String(error));
     }
   };
+
+  if (!isOpen) return null;
+
+  if (isSettingsLoading || settingsLoadError) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/75 backdrop-blur-xs p-4">
+        <div className="w-full max-w-lg rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">文件夹复制功能设置</h2>
+            <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-900 dark:hover:text-white" aria-label="关闭设置">✕</button>
+          </div>
+          {isSettingsLoading ? (
+            <p className="text-sm text-slate-600 dark:text-slate-300">正在从 SQLite 读取设置…</p>
+          ) : (
+            <div className="space-y-3 text-sm">
+              <p className="text-rose-700 dark:text-rose-300">读取 SQLite 设置失败。编辑表单已禁用，请重试或关闭设置。</p>
+              <details className="text-xs text-slate-600 dark:text-slate-400">
+                <summary className="cursor-pointer">查看技术详情</summary>
+                <pre className="mt-2 whitespace-pre-wrap break-all">{settingsLoadError}</pre>
+              </details>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={onClose} className="px-3 py-1.5 rounded bg-slate-200 dark:bg-slate-700">关闭</button>
+                <button type="button" onClick={onRetryLoadSettings} className="px-3 py-1.5 rounded bg-blue-600 text-white">重试</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-200">
@@ -540,34 +584,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Issue 34 Simulation Switch */}
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between text-[11px]">
-            <div className="flex items-center space-x-2 text-slate-600 dark:text-slate-400">
-              <span className="text-slate-400 dark:text-slate-500">[issue34 测试开关]</span>
-              <label className="flex items-center space-x-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={simulateSqliteError}
-                  onChange={(e) => setSimulateSqliteError(e.target.checked)}
-                  className="rounded border-slate-300 dark:border-slate-700 text-rose-500"
-                />
-                <span
-                  className={
-                    simulateSqliteError ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-slate-600 dark:text-slate-400'
-                  }
-                >
-                  模拟 SQLite 写入失败/写锁超时
-                </span>
-              </label>
-            </div>
-            <span className="text-slate-400 dark:text-slate-500">存储位置: %APPDATA%/kbc-app/settings.db</span>
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800/80 text-[11px] text-slate-400 dark:text-slate-500">
+            设置存储在应用配置目录的 SQLite 数据库中。
           </div>
 
           {/* Error Feedback Banner */}
           {errorMessage && (
             <div className="px-3 py-2 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-lg text-rose-800 dark:text-rose-300 text-xs flex items-center space-x-2">
               <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0" />
-              <div className="flex-1 font-mono text-[11px]">{errorMessage}</div>
+              <div className="flex-1 text-[11px]">
+                <div>{errorMessage}</div>
+                {errorDetails && (
+                  <details className="mt-1 font-mono">
+                    <summary className="cursor-pointer">查看技术详情</summary>
+                    <pre className="mt-1 whitespace-pre-wrap break-all">{errorDetails}</pre>
+                  </details>
+                )}
+              </div>
             </div>
           )}
 
