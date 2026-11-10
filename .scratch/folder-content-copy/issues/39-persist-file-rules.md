@@ -17,3 +17,5 @@
 - [ ] 逐条完成前，先运行 `ego-browser skill` 并用 ego-browser 检视 playground 设置弹窗及交互；对照设计稿后，在桌面应用中手动验收 SQLite 读写、验证、失败保留和成功重载流程。
 
 **实现进度（2026-11-10）：** 接入 Tauri 官方 SQL 插件与 SQLite 迁移；前端设置弹窗改为从 SQLite 读取并以单条参数化 upsert 保存完整配置，保存后应用规则并重载当前目录。`bun run build` 与 `cargo check` 通过，桌面应用启动成功。尚未完成设置弹窗的桌面交互验收：当前 computer-use 截图与目标窗口内容不匹配，无法可靠操作控件；本票据保持处理中，待完成手动验收后再勾选验收项并关闭。
+
+**问题修复（2026-11-10）：** 用户反馈添加 `.txt` 白名单后重启再打开规则页面看不到。检查应用 SQLite 数据库发现 `folder_copy_settings` 尚无设置记录；Tauri SQL 插件的 `sql:default` 不包含写权限，导致 `database.execute(...)` 无法保存。已在 `src-tauri/capabilities/default.json` 添加 `sql:allow-execute`。`bun run build`、`cargo check` 和 `git diff --check` 通过。尚未完成桌面界面中的保存与重启复验，因此票据仍保持处理中。

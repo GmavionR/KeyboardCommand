@@ -15,6 +15,7 @@
       "allow": [{ "path": "**" }]
     },
     "dialog:allow-open",
-    "sql:default"
+    "sql:default",
+    "sql:allow-execute"
   ]
 }
