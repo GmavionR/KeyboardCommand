@@ -29,19 +29,29 @@ export function isFileAllowed(
   const segments = relativePath.split(/[/\\]/);
   for (const seg of segments.slice(0, -1)) {
     if (settings.ignoredDirectories.some((ignored) => ignored.toLowerCase() === seg.toLowerCase())) return false;
+    const isExcludedDirectory = settings.exclusions.some((rule) => {
+      if (!rule.endsWith('/')) return false;
+      const expression = rule
+        .slice(0, -1)
+        .split('*')
+        .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'))
+        .join('.*');
+      return new RegExp(`^${expression}$`, 'i').test(seg);
+    });
+    if (isExcludedDirectory) return false;
   }
 
-  const matchesRule = (rule: string) => {
+  const matchesRule = (rule: string, value: string) => {
     const expression = rule
       .split('*')
       .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'))
       .join('.*');
-    return new RegExp(`^${expression}$`, 'i').test(filename);
+    return new RegExp(`^${expression}$`, 'i').test(value);
   };
 
   // Exclusions are name-based; a trailing slash marks a directory rule.
   for (const rule of settings.exclusions) {
-    if (!rule.endsWith('/') && matchesRule(rule)) return false;
+    if (!rule.endsWith('/') && matchesRule(rule, filename)) return false;
   }
 
   // Check whitelist

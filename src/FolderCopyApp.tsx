@@ -12,6 +12,7 @@ import {
 } from './types';
 import {
   getAllSelectableFilesInNode,
+  isFileAllowed,
   findNodeByPath,
   generateContextPackageMarkdown,
   getAncestorPaths,
@@ -736,12 +737,36 @@ export default function App() {
   const handleSaveSettings = async (newSettings: SettingsConfig): Promise<boolean> => {
     setIsSettingsSaving(true);
     try {
-      await saveFolderCopySettings(newSettings);
+      let refreshedTree: FileNode | null = null;
       if (currentPath) {
-        const reloaded = await loadFolder(currentPath, newSettings);
-        if (!reloaded) {
-          throw new Error('设置已写入 SQLite，但当前目录重新加载失败。请重试以应用新设置。');
+        setIsLoadingFolder(true);
+        try {
+          refreshedTree = await invoke<FileNode>('load_directory_tree', {
+            rootPath: currentPath,
+            settings: newSettings,
+          });
+        } finally {
+          setIsLoadingFolder(false);
         }
+      }
+
+      await saveFolderCopySettings(newSettings);
+      if (refreshedTree) {
+        setRootNode(refreshedTree);
+        setExpandedFolders(new Set());
+        setHighlightedPath(null);
+        setLoadingPaths(new Set());
+        setSelectedPaths((previous) => {
+          const remaining = [...previous].filter((relativePath) => {
+            const filename = relativePath.split(/[\\/]/).pop() ?? relativePath;
+            return isFileAllowed(filename, relativePath, newSettings);
+          });
+          return new Set(remaining);
+        });
+      }
+      if (currentPath) {
+        setIsFolderLoaded(true);
+        showToast('success', '设置已保存并应用到当前目录', currentPath);
       } else {
         showToast(
           'success',
