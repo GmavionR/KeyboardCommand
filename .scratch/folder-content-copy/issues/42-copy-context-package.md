@@ -24,6 +24,8 @@
 - 普通复制与历史“读取当前文件”是两种语义（全量取消 vs 跳过失败项并替换记录），因此拆成 `generate_context_package` 与 `refresh_context_package` 两个命令，而不是在一个命令里塞开关；后者在“一个文件都没读到”时返回空正文并只提示，不弹失败对话框。
 - 右键菜单泄漏 WebView2 原生检视菜单的问题在本票据验收中发现，已由 `src/data/browserMenuPolicy.ts` 实现“开发版默认允许、发布版默认屏蔽 + 系统设置开关（`kbc_allow_browser_menu`）”，归入 [issue 44](44-system-settings-and-desktop-integrations.md) 收尾。
 
+- 围栏长度后续由用户改为固定 5 个反引号（见 `map.md`「文件上下文包围栏改为固定长度」），取消“扫描正文取最长连续反引号串再加一”；本票据验收记录里的“围栏自动升为 4 个反引号”是改动前的实测结果，保留作为历史记录。
+
 ## 验收记录
 
 机器证据（把剪贴板导出到文件逐字节比对，夹具在 `%TEMP%\kbc42-demo`）：

@@ -9,6 +9,9 @@ const KNOWN_LANGUAGES: [&str; 10] = [
     "ts", "tsx", "js", "jsx", "json", "css", "html", "md", "py", "rs",
 ];
 
+// 固定 5 个反引号：长于正文里常见的 3 与 4 反引号围栏，不再扫描内容推算长度
+const FENCE: &str = "`````";
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageFailure {
@@ -62,18 +65,6 @@ fn language_tag(name: &str) -> String {
     } else {
         String::new()
     }
-}
-
-fn fence_length(content: &str) -> usize {
-    let longest_run = content
-        .bytes()
-        .scan(0usize, |run, byte| {
-            *run = if byte == b'`' { *run + 1 } else { 0 };
-            Some(*run)
-        })
-        .max()
-        .unwrap_or(0);
-    longest_run.max(2) + 1
 }
 
 fn strip_utf8_bom(bytes: Vec<u8>) -> Vec<u8> {
@@ -192,14 +183,13 @@ fn read_package_file(
         }
     };
 
-    let fence = "`".repeat(fence_length(&content));
     let mut block = format!(
-        "#### [FILE: {relative_path}]\n{fence}{lang}\n",
+        "#### [FILE: {relative_path}]\n{FENCE}{lang}\n",
         lang = language_tag(&file_name)
     );
     block.push_str(&content);
     block.push('\n');
-    block.push_str(&fence);
+    block.push_str(FENCE);
     Ok(block)
 }
 

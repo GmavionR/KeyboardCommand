@@ -60,6 +60,7 @@ Status: resolved
 - [确定忽略目录的默认规则](issues/27-ignored-directory-defaults.md)：设置全局共用，按目录名应用于任意层级；预置版本控制、依赖、构建输出、测试和缓存目录，允许逐项编辑并恢复默认值。
 - [定义文件与文件夹名称排除规则](issues/29-file-exclusion-rules.md)：规则按任意层级的名称匹配，`/` 后缀表示文件夹，文件与文件夹按统一的过滤语义影响树、搜索、递归选择和历史恢复；设置支持编辑及恢复默认。
 - [确定非 UTF-8 文本在复制时的处理](issues/42-copy-context-package.md)：非 UTF-8 解码失败按读取失败处理并触发普通复制全量取消，错误码 `EENCODING`、技术详情给出首个非法字节位置；不采用 Repomix/Gitingest 的“内容占位跳过”和系统 ANSI 代码页转码，避免产出伪造或乱码正文。
+- [文件上下文包围栏改为固定长度](issues/42-copy-context-package.md)：区块围栏固定 5 个反引号，取消“扫描正文取最长连续反引号串再加一”的动态长度做法；用户判断为省掉一次全文件扫描更值得，接受正文出现 5 个及以上连续反引号时该区块提前闭合的取舍。
 - [确定 WebView 右键菜单的弹出与开关规则](issues/44-system-settings-and-desktop-integrations.md)：开发构建默认允许浏览器右键菜单，发布版默认屏蔽并提供系统设置开关；选择持久化到 localStorage，输入框内的原生粘贴与文件树自定义菜单不受影响。起因是验收 issue 42 时右键忽略目录漏出了 WebView2 默认菜单。
 - [确定双击文件节点用系统默认程序打开的手势取舍](issues/50-open-file-in-default-app.md)：复用 Opener 插件 `openPath`，不新增 Rust 命令；因本树行单击是“切换勾选”而非资源管理器式幂等选中，文件行勾选延后 250 毫秒、期间收到双击即取消，使双击只打开不改勾选，勾选框/空格/Enter 保持即时。
 
