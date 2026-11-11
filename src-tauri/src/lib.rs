@@ -505,15 +505,27 @@ async fn list_selectable_files(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_request = parse_activation_args(std::env::args().skip(1));
-    let migrations = vec![tauri_plugin_sql::Migration {
-        version: 1,
-        description: "create_folder_copy_settings",
-        sql: "CREATE TABLE IF NOT EXISTS folder_copy_settings (\
-            id INTEGER PRIMARY KEY CHECK (id = 1),\
-            settings_json TEXT NOT NULL\
-        );",
-        kind: tauri_plugin_sql::MigrationKind::Up,
-    }];
+    let migrations = vec![
+        tauri_plugin_sql::Migration {
+            version: 1,
+            description: "create_folder_copy_settings",
+            sql: "CREATE TABLE IF NOT EXISTS folder_copy_settings (\
+                id INTEGER PRIMARY KEY CHECK (id = 1),\
+                settings_json TEXT NOT NULL\
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 2,
+            description: "create_recent_folder",
+            sql: "CREATE TABLE IF NOT EXISTS recent_folder (\
+                path_key TEXT PRIMARY KEY,\
+                path TEXT NOT NULL,\
+                last_used_at INTEGER NOT NULL\
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+    ];
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())

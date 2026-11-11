@@ -1,5 +1,9 @@
 import { FileNode, SettingsConfig, SearchResultItem } from '../types';
 
+export function normalizeFolderPath(path: string): string {
+  return path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+}
+
 export function getAllSelectableFilesInNode(
   node: FileNode,
   settings: SettingsConfig

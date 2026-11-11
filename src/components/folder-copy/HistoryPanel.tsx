@@ -10,6 +10,7 @@ import {
   Check,
 } from 'lucide-react';
 import { CopyHistoryItem } from '../../types';
+import { normalizeFolderPath } from '../../utils/treeUtils';
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'always' });
 
@@ -53,17 +54,21 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [, setClockNow] = useState(Date.now());
+  const normalizedCurrentFolder = normalizeFolderPath(currentFolderPath);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setClockNow(Date.now()), 30_000);
     return () => window.clearInterval(intervalId);
   }, []);
 
-  // Filter list
+  useEffect(() => {
+    setFilterScope('current');
+  }, [normalizedCurrentFolder]);
+
   const filteredList =
-    filterScope === 'current'
-      ? historyList.filter((item) => item.sourceFolder === currentFolderPath)
-      : historyList;
+    filterScope === 'all'
+      ? historyList
+      : historyList.filter((item) => normalizeFolderPath(item.sourceFolder) === normalizedCurrentFolder);
 
   const handleCopySnapshotClick = (item: CopyHistoryItem) => {
     onCopySnapshot(item);
@@ -124,7 +129,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         ) : (
           filteredList.map((item) => {
             const isDropdownOpen = openDropdownId === item.id;
-            const isCurrentFolder = item.sourceFolder === currentFolderPath;
+            const isCurrentFolder =
+              normalizeFolderPath(item.sourceFolder) === normalizedCurrentFolder;
 
             return (
               <div

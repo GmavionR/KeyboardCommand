@@ -11,7 +11,7 @@ interface StoredSettingsRow {
 
 let databasePromise: Promise<Database> | null = null;
 
-function getDatabase(): Promise<Database> {
+export function getDatabase(): Promise<Database> {
   if (!databasePromise) {
     databasePromise = Database.load(DATABASE_PATH).catch((error) => {
       databasePromise = null;

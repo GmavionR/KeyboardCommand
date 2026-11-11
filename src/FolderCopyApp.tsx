@@ -5,6 +5,12 @@ import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import { loadFolderCopySettings, saveFolderCopySettings } from './data/settingsDatabase';
 import {
+  RECENT_FOLDER_LIMIT,
+  forgetRecentFolder,
+  loadRecentFolders,
+  touchRecentFolder,
+} from './data/recentFolders';
+import {
   FileNode,
   SettingsConfig,
   CopyHistoryItem,
@@ -16,6 +22,7 @@ import {
   findNodeByPath,
   generateContextPackageMarkdown,
   getAncestorPaths,
+  normalizeFolderPath,
 } from './utils/treeUtils';
 import { TitleBar } from './components/common/TitleBar';
 import { SystemSettingsModal } from './components/common/SystemSettingsModal';
@@ -63,9 +70,7 @@ function updateDirectoryNode(
   return changed ? { ...node, children } : node;
 }
 
-function normalizeFolderPath(path: string): string {
-  return path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
-}
+type FolderLoadOutcome = 'loaded' | 'rejected' | 'unreadable';
 
 export default function App() {
   // Folder & Settings State
@@ -139,11 +144,17 @@ export default function App() {
     []
   );
 
-  const loadFolder = useCallback(async (targetPath: string, requestedSettings?: SettingsConfig) => {
+  useEffect(() => {
+    void loadRecentFolders()
+      .then(setRecentFolders)
+      .catch((error) => showToast('error', '无法读取最近文件夹', String(error)));
+  }, [showToast]);
+
+  const loadFolder = useCallback(async (targetPath: string, requestedSettings?: SettingsConfig): Promise<FolderLoadOutcome> => {
     const requestedPath = targetPath.trim();
     if (!requestedPath) {
       showToast('error', '路径不能为空', '请输入有效的文件夹完整路径');
-      return false;
+      return 'rejected';
     }
 
     const requestVersion = ++folderLoadVersion.current;
@@ -155,7 +166,7 @@ export default function App() {
           activeSettings = await loadFolderCopySettings();
         } catch (error) {
           showToast('error', '无法加载文件规则设置', String(error));
-          return false;
+          return 'rejected';
         }
         setSettings(activeSettings);
         setIsSettingsInitialized(true);
@@ -164,7 +175,7 @@ export default function App() {
         rootPath: requestedPath,
         settings: activeSettings,
       });
-      if (requestVersion !== folderLoadVersion.current) return;
+      if (requestVersion !== folderLoadVersion.current) return 'rejected';
 
       const sameFolder = normalizeFolderPath(currentPath) === normalizeFolderPath(requestedPath);
       setCurrentPath(requestedPath);
@@ -179,15 +190,18 @@ export default function App() {
         setSelectableCounts(new Map());
       }
       setRecentFolders((previous) =>
-        [requestedPath, ...previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(requestedPath))].slice(0, 10)
+        [requestedPath, ...previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(requestedPath))].slice(0, RECENT_FOLDER_LIMIT)
+      );
+      void touchRecentFolder(requestedPath).catch((error) =>
+        showToast('error', '最近文件夹未能写入数据库，仅本次运行有效', String(error))
       );
       showToast('success', sameFolder ? '已重新载入文件夹' : '已加载指定文件夹', requestedPath);
-      return true;
+      return 'loaded';
     } catch (error) {
       if (requestVersion === folderLoadVersion.current) {
         showToast('error', '无法读取该文件夹', String(error));
       }
-      return false;
+      return 'unreadable';
     } finally {
       if (requestVersion === folderLoadVersion.current) setIsLoadingFolder(false);
     }
@@ -581,8 +595,14 @@ export default function App() {
     loadFolder(targetPath.trim() || currentPath);
   };
 
-  const handleSelectRecentFolder = (folderPath: string) => {
-    loadFolder(folderPath);
+  const handleSelectRecentFolder = async (folderPath: string) => {
+    if ((await loadFolder(folderPath)) !== 'unreadable') return;
+    setRecentFolders((previous) =>
+      previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(folderPath))
+    );
+    void forgetRecentFolder(folderPath).catch((error) =>
+      showToast('error', '无法把该路径从最近文件夹移除', String(error))
+    );
   };
 
   const handleManualChangePath = (newPath: string) => {

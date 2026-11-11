@@ -11,6 +11,7 @@ import {
   Clock,
   SlidersHorizontal,
 } from 'lucide-react';
+import { normalizeFolderPath } from '../../utils/treeUtils';
 
 interface TopToolbarProps {
   currentPath: string;
@@ -202,7 +203,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                     暂无最近使用的文件夹
                   </div>
                 ) : recentFolders.map((path) => {
-                  const isCurrent = path === currentPath;
+                  const isCurrent = normalizeFolderPath(path) === normalizeFolderPath(currentPath);
                   return (
                     <button
                       key={path}
