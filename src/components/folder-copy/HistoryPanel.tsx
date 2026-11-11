@@ -51,10 +51,47 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onViewSnapshot,
 }) => {
   const [filterScope, setFilterScope] = useState<'current' | 'all'>('current');
-  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  // 菜单挂在滚动列表外，用视口坐标定位，否则会被列表容器的 overflow 裁掉首行
+  const [menu, setMenu] = useState<{ item: CopyHistoryItem; x: number; y: number } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [, setClockNow] = useState(Date.now());
   const normalizedCurrentFolder = normalizeFolderPath(currentFolderPath);
+
+  const MENU_WIDTH = 192;
+  const MENU_HEIGHT = 104;
+
+  const openMenu = (event: React.MouseEvent<HTMLButtonElement>, item: CopyHistoryItem) => {
+    // 阻止冒泡到 window，否则刚注册的关闭监听会在同一次点击里把菜单关掉
+    event.stopPropagation();
+    if (menu?.item.id === item.id) {
+      setMenu(null);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(10, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 10));
+    // 卡片靠近列表顶部时向上放不下，改为向下展开
+    const above = rect.top - MENU_HEIGHT - 6;
+    const y = above >= 10
+      ? above
+      : Math.max(10, Math.min(rect.bottom + 6, window.innerHeight - MENU_HEIGHT - 10));
+    setMenu({ item, x, y });
+  };
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menu]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setClockNow(Date.now()), 30_000);
@@ -65,8 +102,10 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     setFilterScope('current');
   }, [normalizedCurrentFolder]);
 
+  // 没有加载目录时按设计显示全部记录，此时「当前目录」筛选无意义
+  const hasCurrentFolder = normalizedCurrentFolder !== '';
   const filteredList =
-    filterScope === 'all'
+    !hasCurrentFolder || filterScope === 'all'
       ? historyList
       : historyList.filter((item) => normalizeFolderPath(item.sourceFolder) === normalizedCurrentFolder);
 
@@ -91,19 +130,24 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         <div className="flex items-center space-x-1 text-[11px] bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-0.5">
           <button
             onClick={() => setFilterScope('current')}
-            className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-              filterScope === 'current'
+            disabled={!hasCurrentFolder}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              !hasCurrentFolder
+                ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
+                : 'cursor-pointer'
+            } ${
+              hasCurrentFolder && filterScope === 'current'
                 ? 'bg-blue-600 text-white font-medium shadow-2xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
-            title="仅显示当前根目录的历史记录"
+            title={hasCurrentFolder ? '仅显示当前根目录的历史记录' : '尚未加载文件夹，显示全部历史记录'}
           >
             当前目录
           </button>
           <button
             onClick={() => setFilterScope('all')}
             className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-              filterScope === 'all'
+              !hasCurrentFolder || filterScope === 'all'
                 ? 'bg-blue-600 text-white font-medium shadow-2xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
@@ -121,14 +165,13 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             <Clock className="w-7 h-7 text-slate-400 dark:text-slate-600 mb-2 stroke-1" />
             <span className="text-slate-700 dark:text-slate-300 font-medium">暂无复制历史记录</span>
             <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-              {filterScope === 'current'
+              {hasCurrentFolder && filterScope === 'current'
                 ? '当前文件夹下尚未生成文件上下文包'
                 : '未产生任何复制记录'}
             </span>
           </div>
         ) : (
           filteredList.map((item) => {
-            const isDropdownOpen = openDropdownId === item.id;
             const isCurrentFolder =
               normalizeFolderPath(item.sourceFolder) === normalizedCurrentFolder;
 
@@ -143,10 +186,10 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     <Clock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                     <time
                       className="text-slate-700 dark:text-slate-300"
-                      dateTime={new Date(item.timestamp).toISOString()}
-                      title={new Date(item.timestamp).toLocaleString('zh-CN')}
+                      dateTime={new Date(item.createdAt).toISOString()}
+                      title={new Date(item.createdAt).toLocaleString('zh-CN')}
                     >
-                      {formatRelativeTime(item.timestamp, Date.now())}
+                      {formatRelativeTime(item.createdAt, Date.now())}
                     </time>
                     <span className="text-slate-300 dark:text-slate-600">•</span>
                     <span className="text-blue-600 dark:text-blue-400 font-medium">
@@ -219,50 +262,15 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     </button>
 
                     {/* Re-read dropdown trigger */}
-                    <div className="relative">
-                      <button
-                        onClick={() =>
-                          setOpenDropdownId(isDropdownOpen ? null : item.id)
-                        }
-                        className="p-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-[11px] transition-colors cursor-pointer border border-slate-300 dark:border-slate-700"
-                        title="更多操作（重读当前文件）"
-                      >
-                        <ChevronDown className="w-3 h-3" />
-                      </button>
-
-                      {isDropdownOpen && (
-                        <div className="absolute right-0 bottom-full mb-1.5 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 py-1 text-xs">
-                          <button
-                            onClick={() => {
-                              onReReadFile(item);
-                              setOpenDropdownId(null);
-                            }}
-                            className="w-full text-left px-3 py-1.5 flex items-center space-x-2 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                            <div>
-                              <div className="font-medium text-[11px]">读取当前文件</div>
-                              <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                                重新读取磁盘并替换本记录
-                              </div>
-                            </div>
-                          </button>
-
-                          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-
-                          <button
-                            onClick={() => {
-                              onDeleteHistory(item.id);
-                              setOpenDropdownId(null);
-                            }}
-                            className="w-full text-left px-3 py-1.5 flex items-center space-x-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span className="text-[11px]">删除此条历史</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      onClick={(event) => openMenu(event, item)}
+                      className="p-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-[11px] transition-colors cursor-pointer border border-slate-300 dark:border-slate-700"
+                      title="更多操作（重读当前文件）"
+                      aria-haspopup="menu"
+                      aria-expanded={menu?.item.id === item.id}
+                    >
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
 
                     {/* Delete single button */}
                     <button
@@ -279,6 +287,48 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
           })
         )}
       </div>
+
+      {menu && (
+        <div
+          role="menu"
+          style={{ left: `${menu.x}px`, top: `${menu.y}px` }}
+          className="fixed z-50 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => {
+              const item = menu.item;
+              setMenu(null);
+              onReReadFile(item);
+            }}
+            className="w-full text-left px-3 py-1.5 flex items-center space-x-2 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+            <div>
+              <div className="font-medium text-[11px]">读取当前文件</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                重新读取磁盘并替换本记录
+              </div>
+            </div>
+          </button>
+
+          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+          <button
+            role="menuitem"
+            onClick={() => {
+              const id = menu.item.id;
+              setMenu(null);
+              onDeleteHistory(id);
+            }}
+            className="w-full text-left px-3 py-1.5 flex items-center space-x-2 text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="text-[11px]">删除此条历史</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

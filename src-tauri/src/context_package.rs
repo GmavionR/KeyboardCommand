@@ -1,4 +1,4 @@
-use crate::{directory_block_reason, is_allowed_file, user_error, TreeSettings};
+use crate::{directory_block_reason, is_allowed_file, user_error, SelectableFile, TreeSettings};
 use chrono::Local;
 use serde::Serialize;
 use std::fs;
@@ -84,11 +84,11 @@ fn strip_utf8_bom(bytes: Vec<u8>) -> Vec<u8> {
     }
 }
 
-fn read_package_file(
+fn resolve_package_target(
     canonical_root: &Path,
     relative_path: &str,
     settings: &TreeSettings,
-) -> Result<String, PackageError> {
+) -> Result<(PathBuf, String), PackageError> {
     let supplied = Path::new(relative_path);
     let segments: Vec<&std::ffi::OsStr> = match supplied
         .components()
@@ -158,6 +158,16 @@ fn read_package_file(
             format!("解析后的真实路径：{}", canonical_target.display()),
         ));
     }
+    Ok((canonical_target, file_name))
+}
+
+fn read_package_file(
+    canonical_root: &Path,
+    relative_path: &str,
+    settings: &TreeSettings,
+) -> Result<String, PackageError> {
+    let (canonical_target, file_name) =
+        resolve_package_target(canonical_root, relative_path, settings)?;
 
     let bytes = match fs::read(&canonical_target) {
         Ok(bytes) => bytes,
@@ -322,6 +332,35 @@ pub async fn refresh_context_package(
                 error.to_string(),
             )
         })?
+}
+
+// 恢复历史选择时只保留仍存在且符合当前规则的文件，失效项静默跳过（issue 43、ADR-0001）
+#[tauri::command]
+pub async fn filter_selectable_paths(
+    root_path: String,
+    relative_paths: Vec<String>,
+    settings: TreeSettings,
+) -> Result<Vec<SelectableFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Ok(canonical_root) = fs::canonicalize(&root_path) else {
+            return Ok(Vec::new());
+        };
+        let files = relative_paths
+            .iter()
+            .filter_map(|relative_path| {
+                let (target, _) =
+                    resolve_package_target(&canonical_root, relative_path, &settings).ok()?;
+                let size = fs::metadata(&target).ok()?.len();
+                Some(SelectableFile {
+                    path: relative_path.clone(),
+                    size,
+                })
+            })
+            .collect();
+        Ok(files)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

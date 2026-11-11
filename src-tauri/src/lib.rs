@@ -5,6 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use tauri::{Emitter, Manager, State};
 
 mod context_package;
+mod history_store;
 
 const DEFAULT_ROUTE: &str = "/folder-copy";
 
@@ -70,9 +71,9 @@ struct DirectoryEntry {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SelectableFile {
-    path: String,
-    size: u64,
+pub(crate) struct SelectableFile {
+    pub(crate) path: String,
+    pub(crate) size: u64,
 }
 
 #[derive(Serialize)]
@@ -556,7 +557,13 @@ pub fn run() {
             load_directory_page,
             list_selectable_files,
             context_package::generate_context_package,
-            context_package::refresh_context_package
+            context_package::refresh_context_package,
+            context_package::filter_selectable_paths,
+            history_store::list_history,
+            history_store::save_history,
+            history_store::replace_history,
+            history_store::delete_history,
+            history_store::read_history_body
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

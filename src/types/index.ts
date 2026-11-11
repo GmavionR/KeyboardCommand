@@ -33,14 +33,19 @@ export interface SearchResultItem {
   isSelected?: boolean;
 }
 
+// 与 src-tauri/src/history_store.rs 的落盘元数据同形；快照正文按需懒加载，不常驻内存
 export interface CopyHistoryItem {
   id: string;
-  createdAt: string; // ISO or formatted
-  timestamp: number;
+  createdAt: number; // Unix 毫秒
   sourceFolder: string;
   fileCount: number;
   filePaths: string[];
-  packageSnapshot: string;
+  bodyFileName: string;
+}
+
+export interface HistoryListResult {
+  records: CopyHistoryItem[];
+  warning: string | null;
 }
 
 export interface SettingsConfig {

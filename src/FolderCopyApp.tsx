@@ -17,7 +17,9 @@ import {
   CopyHistoryItem,
   CopyFailureDetail,
   ContextPackageError,
+  HistoryListResult,
   RefreshedPackage,
+  SelectableFile,
   SelectableFilesResult,
 } from './types';
 import {
@@ -55,19 +57,9 @@ interface DirectoryPage {
   totalCount: number;
 }
 
-// 复制历史为 FIFO 列表，条数上限 20
-const HISTORY_LIMIT = 20;
-
-// 记录标识见 issue 48：毫秒时间戳加随机后缀，避免同毫秒两次复制撞 key
-function createHistoryStamp() {
-  const now = new Date();
-  const timestamp = now.getTime();
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return {
-    id: `${timestamp}-${Math.random().toString(16).slice(2, 8).padEnd(6, '0')}`,
-    createdAt: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
-    timestamp,
-  };
+// 历史元数据只带 Unix 毫秒，落盘与显示同源（issue 48）
+function formatHistoryTime(createdAt: number): string {
+  return new Date(createdAt).toLocaleString('zh-CN');
 }
 
 function asPackageError(error: unknown): ContextPackageError | null {
@@ -119,6 +111,7 @@ export default function App() {
   const [isLoadingFolder, setIsLoadingFolder] = useState(false);
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const folderLoadVersion = useRef(0);
+  const historyWarningShown = useRef(false);
 
   // Selection & Tree State
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -135,8 +128,11 @@ export default function App() {
   // In narrow mode: single-panel tabs between tree, selection, history
   const [narrowActiveTab, setNarrowActiveTab] = useState<'tree' | 'selection' | 'history'>('tree');
 
-  // History State (FIFO max 20)
+  // History State（落盘见 issue 48；列表由 list_history 读出）
   const [historyList, setHistoryList] = useState<CopyHistoryItem[]>([]);
+  // 状态预设只演示无历史时的空界面，不得伪造或删除真实历史
+  const [presetEmptyHistory, setPresetEmptyHistory] = useState(false);
+  const visibleHistoryList = presetEmptyHistory ? [] : historyList;
 
   // Modals & Dialogs
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Page rules settings (whitelist, exclusions, etc.)
@@ -213,6 +209,76 @@ export default function App() {
     [showToast]
   );
 
+  // 历史列表是磁盘事实的投影：每次写入后重新读取，前端不自己拼列表
+  const refreshHistory = useCallback(async (): Promise<CopyHistoryItem[]> => {
+    let result: HistoryListResult;
+    try {
+      result = await invoke<HistoryListResult>('list_history');
+    } catch (error) {
+      setHistoryList([]);
+      if (!historyWarningShown.current) {
+        historyWarningShown.current = true;
+        showToast('error', '无法读取复制历史', String(error));
+      }
+      return [];
+    }
+    setHistoryList(result.records);
+    if (result.warning && !historyWarningShown.current) {
+      historyWarningShown.current = true;
+      showToast('error', '复制历史读取异常', result.warning);
+    }
+    return result.records;
+  }, [showToast]);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
+
+  // issue 48：正文已交付剪贴板无法回滚，写盘失败只单独提示，并且该条不进入历史列表
+  const persistHistory = useCallback(
+    async (sourceFolder: string, filePaths: string[], markdown: string): Promise<boolean> => {
+      try {
+        await invoke('save_history', { sourceFolder, filePaths, markdown });
+      } catch (error) {
+        showToast(
+          'error',
+          '复制成功，但该条历史未能保存',
+          `${String(error)}\n重启后这条记录不会出现在复制历史中。`
+        );
+        return false;
+      }
+      await refreshHistory();
+      return true;
+    },
+    [refreshHistory, showToast]
+  );
+
+  // ADR-0001 / issue 43：加载目录后以该目录最新历史为参考恢复选择，失效项由 Rust 静默过滤
+  const restoreSelectionFromHistory = useCallback(
+    async (folderPath: string, activeSettings: SettingsConfig, requestVersion: number) => {
+      const records = await refreshHistory();
+      const latest = records.find(
+        (record) =>
+          normalizeFolderPath(record.sourceFolder) === normalizeFolderPath(folderPath)
+      );
+      if (!latest || requestVersion !== folderLoadVersion.current) return;
+
+      try {
+        const survivors = await invoke<SelectableFile[]>('filter_selectable_paths', {
+          rootPath: folderPath,
+          relativePaths: latest.filePaths,
+          settings: activeSettings,
+        });
+        if (requestVersion !== folderLoadVersion.current || survivors.length === 0) return;
+        setSelectedPaths(new Set(survivors.map((file) => file.path)));
+        setSelectedSizes(new Map(survivors.map((file) => [file.path, file.size])));
+      } catch (error) {
+        showToast('error', '无法恢复上次复制的文件选择', String(error));
+      }
+    },
+    [refreshHistory, showToast]
+  );
+
   const loadFolder = useCallback(async (targetPath: string, requestedSettings?: SettingsConfig): Promise<FolderLoadOutcome> => {
     const requestedPath = targetPath.trim();
     if (!requestedPath) {
@@ -251,6 +317,7 @@ export default function App() {
         setSelectedPaths(new Set());
         setSelectedSizes(new Map());
         setSelectableCounts(new Map());
+        void restoreSelectionFromHistory(requestedPath, activeSettings, requestVersion);
       }
       setRecentFolders((previous) =>
         [requestedPath, ...previous.filter((path) => normalizeFolderPath(path) !== normalizeFolderPath(requestedPath))].slice(0, RECENT_FOLDER_LIMIT)
@@ -268,7 +335,7 @@ export default function App() {
     } finally {
       if (requestVersion === folderLoadVersion.current) setIsLoadingFolder(false);
     }
-  }, [currentPath, isSettingsInitialized, settings, showToast]);
+  }, [currentPath, isSettingsInitialized, restoreSelectionFromHistory, settings, showToast]);
 
   const handleLoadSettings = async () => {
     setIsSettingsLoading(true);
@@ -292,6 +359,7 @@ export default function App() {
   // Preset switching logic
   const handleSelectPreset = (preset: DesignStatePreset) => {
     setCurrentPreset(preset);
+    setPresetEmptyHistory(preset === 'empty_history');
     setIsFailureDialogOpen(false);
     setIsSettingsOpen(false);
     setIsPreviewOpen(false);
@@ -355,10 +423,9 @@ export default function App() {
         break;
 
       case 'empty_history':
-        setHistoryList([]);
         setAuxiliaryView('history');
         if (viewportMode === 'narrow') setNarrowActiveTab('history');
-        showToast('info', '已切换到无历史记录状态', '展示无历史记录时的明确空状态');
+        showToast('info', '已切换到无历史记录状态', '仅演示空状态，真实历史记录未被改动');
         break;
 
       case 'large_dir':
@@ -700,24 +767,14 @@ export default function App() {
       const md = await buildContextPackage(currentPath, selectedArr);
       if (!(await copyToClipboard(md))) return;
 
-      const stamp = createHistoryStamp();
-      const newHistoryItem: CopyHistoryItem = {
-        id: stamp.id,
-        createdAt: stamp.createdAt,
-        timestamp: stamp.timestamp,
-        sourceFolder: currentPath,
-        fileCount: selectedArr.length,
-        filePaths: selectedArr,
-        packageSnapshot: md,
-      };
-
-      setHistoryList((prev) => [newHistoryItem, ...prev].slice(0, HISTORY_LIMIT));
-
-      showToast(
-        'success',
-        '已复制文件上下文包到剪贴板！',
-        `共 ${selectedArr.length} 个文件，已加入复制历史`
-      );
+      // 写盘失败时 persistHistory 已经给出唯一一条提示，这里不再叠加成功提示
+      if (await persistHistory(currentPath, selectedArr, md)) {
+        showToast(
+          'success',
+          '已复制文件上下文包到剪贴板！',
+          `共 ${selectedArr.length} 个文件，已加入复制历史`
+        );
+      }
     } catch (error) {
       reportPackageError(error, '无法生成文件上下文包');
     } finally {
@@ -725,13 +782,25 @@ export default function App() {
     }
   };
 
-  // History Action 1: Copy saved snapshot directly
+  // 快照正文懒加载（issue 48）：读失败只提示该条，条目保留在列表里由用户自行删除
+  const loadHistoryBody = async (item: CopyHistoryItem): Promise<string | null> => {
+    try {
+      return await invoke<string>('read_history_body', { historyId: item.id });
+    } catch (error) {
+      showToast('error', '无法读取该条历史的快照正文', String(error));
+      return null;
+    }
+  };
+
+  // History Action 1: Copy saved snapshot directly（不重读源文件、不刷新创建时间）
   const handleCopyHistorySnapshot = async (item: CopyHistoryItem) => {
-    if (!(await copyToClipboard(item.packageSnapshot))) return;
+    const markdown = await loadHistoryBody(item);
+    if (markdown === null) return;
+    if (!(await copyToClipboard(markdown))) return;
     showToast(
       'success',
       '已复制保存的历史快照',
-      `未重新扫描磁盘，保持 ${item.createdAt} 历史状态`
+      `未重新扫描磁盘，保持 ${formatHistoryTime(item.createdAt)} 历史状态`
     );
   };
 
@@ -755,41 +824,54 @@ export default function App() {
 
       if (!(await copyToClipboard(result.markdown))) return;
 
-      const stamp = createHistoryStamp();
-      const updatedItem: CopyHistoryItem = {
-        ...item,
-        createdAt: stamp.createdAt,
-        timestamp: stamp.timestamp,
-        fileCount: result.paths.length,
-        filePaths: result.paths,
-        packageSnapshot: result.markdown,
-      };
-      setHistoryList((prev) => prev.map((h) => (h.id === item.id ? updatedItem : h)));
+      let replaced = true;
+      try {
+        await invoke('replace_history', {
+          replacedId: item.id,
+          sourceFolder: item.sourceFolder,
+          filePaths: result.paths,
+          markdown: result.markdown,
+        });
+      } catch (error) {
+        replaced = false;
+        showToast('error', '复制成功，但该条历史未能更新', String(error));
+      }
+      if (replaced) await refreshHistory();
 
       const skipped = result.failures.length;
-      showToast(
-        skipped > 0 ? 'info' : 'success',
-        skipped > 0
-          ? `重读部分成功：已复制 ${result.paths.length} 个有效文件`
-          : `已从磁盘重新读取 ${result.paths.length} 个当前文件并复制到剪贴板！`,
-        skipped > 0
-          ? `已跳过 ${skipped} 个失败文件，历史记录已用新快照替换`
-          : '已更新并刷新该条历史记录时间戳'
-      );
+      if (replaced) {
+        showToast(
+          skipped > 0 ? 'info' : 'success',
+          skipped > 0
+            ? `重读部分成功：已复制 ${result.paths.length} 个有效文件`
+            : `已从磁盘重新读取 ${result.paths.length} 个当前文件并复制到剪贴板！`,
+          skipped > 0
+            ? `已跳过 ${skipped} 个失败文件，历史记录已用新快照替换`
+            : '已更新并刷新该条历史记录时间戳'
+        );
+      }
     } catch (error) {
       reportPackageError(error, '无法重新读取文件');
     }
   };
 
   // History Action 3: Delete history item
-  const handleDeleteHistory = (id: string) => {
-    setHistoryList((prev) => prev.filter((h) => h.id !== id));
+  const handleDeleteHistory = async (id: string) => {
+    try {
+      await invoke('delete_history', { historyId: id });
+    } catch (error) {
+      showToast('error', '无法删除该条历史记录', String(error));
+      return;
+    }
+    await refreshHistory();
     showToast('info', '已删除该条历史记录');
   };
 
   // View historical package snapshot modal
-  const handleViewHistoricalSnapshot = (item: CopyHistoryItem) => {
-    setPreviewMarkdown(item.packageSnapshot);
+  const handleViewHistoricalSnapshot = async (item: CopyHistoryItem) => {
+    const markdown = await loadHistoryBody(item);
+    if (markdown === null) return;
+    setPreviewMarkdown(markdown);
     setIsPreviewOpen(true);
   };
 
@@ -800,18 +882,7 @@ export default function App() {
       const md = await buildContextPackage(currentPath, [node.path]);
       if (!(await copyToClipboard(md))) return;
 
-      const stamp = createHistoryStamp();
-      const newHistoryItem: CopyHistoryItem = {
-        id: stamp.id,
-        createdAt: stamp.createdAt,
-        timestamp: stamp.timestamp,
-        sourceFolder: currentPath,
-        fileCount: 1,
-        filePaths: [node.path],
-        packageSnapshot: md,
-      };
-
-      setHistoryList((prev) => [newHistoryItem, ...prev].slice(0, HISTORY_LIMIT));
+      if (!(await persistHistory(currentPath, [node.path], md))) return;
 
       // Operates without changing any existing file or folder selection states
       showToast(
@@ -1009,7 +1080,7 @@ export default function App() {
                 onClearAll={handleClearAllSelections}
                 onLocateInTree={(p) => handleLocateNodeInTree(p, false)}
                 onPreviewPackage={handlePreviewPackage}
-                historyList={historyList}
+                historyList={visibleHistoryList}
                 currentFolderPath={currentPath}
                 onCopySnapshot={handleCopyHistorySnapshot}
                 onReReadFile={handleReReadFile}
@@ -1129,7 +1200,7 @@ export default function App() {
 
               {narrowActiveTab === 'history' && (
                 <HistoryPanel
-                  historyList={historyList}
+                  historyList={visibleHistoryList}
                   currentFolderPath={currentPath}
                   onCopySnapshot={handleCopyHistorySnapshot}
                   onReReadFile={handleReReadFile}
