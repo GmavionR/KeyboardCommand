@@ -2,7 +2,7 @@
 
 **要构建：** 用户能查看和管理可恢复的复制历史；每次成功复制的快照在应用重启后仍可用。
 
-**阻塞于：** [浏览真实目录并加载文件树](38-directory-tree-and-pagination.md)、[复制文件上下文包](42-copy-context-package.md)
+**阻塞于：** [浏览真实目录并加载文件树](38-directory-tree-and-pagination.md)、[复制文件上下文包](42-copy-context-package.md)、[确定历史快照的落盘位置、读写归属与失败语义](48-history-snapshot-storage.md)
 
 **状态：** ready-for-agent
 **标签：** ready-for-agent

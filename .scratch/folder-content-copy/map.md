@@ -33,7 +33,7 @@ Status: resolved
 - [大目录首批及每次追加均为 30 项](issues/28-large-directory-batch-size.md)：剩余不足 30 项时显示全部剩余项。
 - [递归选择符合条件的后代，文件夹使用三态](issues/05-selection-semantics.md)：递归选择可处理且未被忽略的文件；文件夹显示全选、部分选中或未选中。
 - [复制结果命名为“文件上下文包”](issues/06-copy-format-and-term.md)：使用绝对路径标题和 Markdown 文本代码块；必要时延长围栏以避免内容冲突。
-- [确定文件上下文包的精确文本格式](issues/31-copy-package-exact-format.md)：使用二级标题和行内代码展示绝对路径；代码围栏依文件类型标记并按内容动态延长；统一换行为 LF，保留文件内容空行，整个包以一个 LF 结尾。
+- [确定文件上下文包的精确文本格式](issues/31-copy-package-exact-format.md)：使用二级标题和行内代码展示绝对路径；代码围栏依文件类型标记并按内容动态延长；统一换行为 LF，保留文件内容空行，整个包以一个 LF 结尾。（该格式已被 `design.md` 的相对路径方案取代，见 spec.md 实现决定。）
 - [确定文件夹复制页面的控件布局](issues/32-folder-copy-ui-layout.md)：页面标题为“文件夹内容复制”，默认绘图画布 1280×800；主区左侧文件树、右侧选择/历史辅助面板，窄窗口切换为单面板；固定“复制文件上下文包”操作栏，设置弹窗纵向分组并逐组恢复默认。
 - [确定历史记录列表的范围和排序](issues/33-history-list-scope-and-order.md)：选择文件夹时默认显示该文件夹记录，可切换查看全部记录；无当前文件夹时显示全部，始终按创建时间从新到旧排列，并区分当前文件夹无记录和全局无记录的空状态。
 - [定义设置数据库读写失败时的反馈](issues/34-settings-persistence-failure-feedback.md)：读取失败时不伪装成默认值，提供重试且禁用编辑；保存采用单事务，失败回滚并保留草稿与页面状态；以中文摘要及可展开技术详情反馈。
@@ -51,6 +51,7 @@ Status: resolved
 - [采用 TanStack Router 客户端路由并支持冷启动与重载](issues/18-choose-spa-router.md)：优先使用简洁路径；若 Windows 打包后的深层路径无法可靠恢复，则采用哈希路径。外部激活协议另行决定。
 - [首版通过单实例插件和命令行参数激活功能](issues/19-choose-external-activation-protocol.md)：使用 `kbcapp --route <功能路径>`，AHK 采用相同参数；不注册 URI Scheme。请求可冷启动或转交到现有实例，并在校验后导航。
 - [每条历史记录使用两个配对文件](issues/20-history-file-layout.md)：`.meta.json` 保存元数据，`.md` 只保存原样文件上下文包正文；元数据文件作为记录发布标记。
+- [确定历史快照的落盘位置、读写归属与失败语义](issues/48-history-snapshot-storage.md)：历史落在与设置数据库同根的 `history\` 子目录，由自定义 Rust 命令读写，单文件临时文件加原子重命名，记录标识为毫秒时间戳加随机后缀；启动只读元数据、正文懒加载，写盘失败时复制仍成功但该条不入列表，目录不可读时历史按空处理且不阻塞浏览。
 - [定义文件和文件夹的实时搜索体验](issues/22-live-search-experience.md)：按相对路径进行大小写不敏感的纯文本包含匹配，停止输入 500 毫秒后查询；最多显示 10 个通过规则筛选的结果；Enter 对文件切换选择、对文件夹仅定位，并在树中展开和加载到目标节点。
 - [定义 fd 搜索不可用及遍历异常时的行为](issues/26-fd-search-availability-and-errors.md)：使用用户自行安装的 fd；不可用时禁用搜索并提示安装，遍历部分失败时展示已有结果并提示搜索不完整。
 - [确定忽略目录的默认规则](issues/27-ignored-directory-defaults.md)：设置全局共用，按目录名应用于任意层级；预置版本控制、依赖、构建输出、测试和缓存目录，允许逐项编辑并恢复默认值。
