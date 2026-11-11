@@ -114,7 +114,7 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
       id: 'history_partial_fail',
       label: '11. 历史重读',
       icon: <History className="w-3.5 h-3.5 text-purple-400" />,
-      desc: '重读部分失败时继续复制成功文件并提示失败项',
+      desc: '按磁盘当前内容重读首条历史，失败文件自动忽略并提示',
     },
     {
       id: 'settings_open',

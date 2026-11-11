@@ -13,7 +13,6 @@ export interface FileNode {
   childrenCount?: number;
   hasMoreChildren?: boolean;
   isExpanded?: boolean;
-  content?: string; // mock file content
 }
 
 export interface SelectableFile {
@@ -54,10 +53,17 @@ export interface SettingsConfig {
 export interface CopyFailureDetail {
   filePath: string;
   reason: string;
-  code: 'EACCES' | 'EBUSY' | 'ENOENT' | 'ENOPERM';
+  code: 'EACCES' | 'EBUSY' | 'ENOENT' | 'ENOPERM' | 'EINVAL' | 'EENCODING';
+  detail: string;
 }
 
-export interface ReReadResult {
-  successPaths: string[];
-  failedPaths: { path: string; reason: string }[];
+export interface ContextPackageError {
+  failures: CopyFailureDetail[];
+}
+
+// refresh_context_package 返回：markdown 为 null 表示全部文件读取失败
+export interface RefreshedPackage {
+  markdown: string | null;
+  paths: string[];
+  failures: CopyFailureDetail[];
 }

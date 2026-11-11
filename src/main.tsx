@@ -7,9 +7,12 @@ import {
   setActivationNotice,
   ActivationRequest,
 } from "./activation";
+import { installBrowserMenuPolicy } from "./data/browserMenuPolicy";
 import { router } from "./router";
 
 const supportedRoutes = new Set(["/folder-copy", "/prompts"]);
+
+installBrowserMenuPolicy();
 
 async function applyActivationRequest(request: ActivationRequest) {
   if (request.route && supportedRoutes.has(request.route)) {

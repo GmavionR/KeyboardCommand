@@ -43,11 +43,16 @@ interface FileTreeProps {
   onLoadMore: (path: string) => void;
   onCopySingleFile?: (node: FileNode) => void;
   onRevealNodeInFileManager?: (node: FileNode) => void;
+  onOpenFileInDefaultApp?: (node: FileNode) => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   onSelectAllValid?: () => void;
   onClearAll?: () => void;
 }
+
+// 行单击与行双击共用同一区域：单击的勾选要等过这个窗口才执行，
+// 期间若收到双击则取消，避免双击打开文件时勾选状态闪一下。
+const DOUBLE_CLICK_WINDOW_MS = 250;
 
 // Flatten all visible nodes in DFS order according to current expansion state
 function getFlattenedVisibleNodes(
@@ -90,6 +95,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onLoadMore,
   onCopySingleFile,
   onRevealNodeInFileManager,
+  onOpenFileInDefaultApp,
   onExpandAll,
   onCollapseAll,
   onSelectAllValid,
@@ -388,6 +394,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
           onLoadMore={onLoadMore}
           loadingPaths={loadingPaths}
           onContextMenu={handleNodeContextMenu}
+          onOpenFileInDefaultApp={onOpenFileInDefaultApp}
         />
       </div>
 
@@ -475,6 +482,7 @@ interface TreeNodeProps {
   onLoadMore: (path: string) => void;
   loadingPaths: Set<string>;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
+  onOpenFileInDefaultApp?: (node: FileNode) => void;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -493,6 +501,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   onLoadMore,
   loadingPaths,
   onContextMenu,
+  onOpenFileInDefaultApp,
 }) => {
   const totalChildren = node.childrenCount ?? node.children?.length ?? 0;
   const loadedChildren = node.children?.length ?? 0;
@@ -511,8 +520,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       ? 'checked'
       : 'unchecked';
 
+  const pendingToggleRef = useRef<number | null>(null);
+  const cancelPendingToggle = () => {
+    if (pendingToggleRef.current !== null) {
+      window.clearTimeout(pendingToggleRef.current);
+      pendingToggleRef.current = null;
+    }
+  };
+  useEffect(() => cancelPendingToggle, []);
+
   const handleFolderCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    cancelPendingToggle();
     if (isNodeBlocked) return;
     onFocusNode(node.path);
     const shouldSelect = triState !== 'checked';
@@ -521,6 +540,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
   const handleFileCheckboxClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    cancelPendingToggle();
     onFocusNode(node.path);
     onToggleFile(node.path);
   };
@@ -530,9 +550,21 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     if (isNodeBlocked) return;
     if (node.type === 'directory') {
       onToggleExpandFolder(node.path);
-    } else {
-      onToggleFile(node.path);
+      return;
     }
+    cancelPendingToggle();
+    pendingToggleRef.current = window.setTimeout(() => {
+      pendingToggleRef.current = null;
+      onToggleFile(node.path);
+    }, DOUBLE_CLICK_WINDOW_MS);
+  };
+
+  // 双击打开文件；落在勾选框、展开箭头、分页按钮上的双击只是快速切换选择，不拉起外部程序
+  const handleRowDoubleClick = (e: React.MouseEvent) => {
+    cancelPendingToggle();
+    if (e.target instanceof Element && e.target.closest('button')) return;
+    if (isNodeBlocked || node.type !== 'file') return;
+    onOpenFileInDefaultApp?.(node);
   };
 
   const renderFileIcon = () => {
@@ -567,6 +599,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       <div
         data-node-path={node.path}
         onClick={handleRowClick}
+        onDoubleClick={handleRowDoubleClick}
         onContextMenu={(e) => onContextMenu(e, node)}
         style={{ paddingLeft: `${depth * 18 + 6}px` }}
         className={`group flex items-center justify-between py-1 px-2 rounded-md cursor-pointer transition-all ${
@@ -582,7 +615,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         }`}
         title={
           node.type === 'file' && !isNodeBlocked
-            ? `${node.path} (右键可复制当前文件或在文件资源管理器中显示，空格切换勾选)`
+            ? `${node.path} (右键可复制当前文件或在文件资源管理器中显示，双击用系统默认程序打开，空格切换勾选)`
             : node.type === 'directory' && !isNodeBlocked
             ? `${node.path} (右键可在文件资源管理器中显示，空格展开/折叠)`
             : `${node.path} (空格展开/折叠)`
@@ -741,6 +774,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 onLoadMore={onLoadMore}
                 loadingPaths={loadingPaths}
                 onContextMenu={onContextMenu}
+                onOpenFileInDefaultApp={onOpenFileInDefaultApp}
               />
             ))}
 

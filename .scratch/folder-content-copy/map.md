@@ -40,6 +40,7 @@ Status: resolved
 - [定义树节点右键菜单的单文件复制行为](issues/35-copy-file-from-tree-context-menu.md)：可选文件节点可单独复制为单文件文件上下文包并新增历史，不影响现有选择。
 - [定义树节点在系统文件管理器中的显示行为](issues/37-reveal-tree-node-in-file-manager.md)：有效文件可显示在其所在目录，文件夹直接打开；忽略和排除文件夹不提供右键操作，且不改变勾选状态。
 - [定义文件树的键盘焦点和空格键行为](issues/36-file-tree-keyboard-navigation.md)：上下键只移动焦点；空格对文件夹展开/关闭，对文件选中/取消选中。
+- [定义双击文件节点用系统默认程序打开](issues/50-open-file-in-default-app.md)：复用 Opener 插件 `openPath` 与 issue 37 的权限 scope，不新增 Rust 命令；文件行单击勾选延后 250 毫秒、期间收到双击即取消，使双击只打开不改勾选；目录与忽略/排除节点双击不打开程序。
 - [完成文件选择与选择清单](issues/40-file-selection-and-summary.md)：递归选择和目录三态、选择面板单项移除及大小统计；通过 Tauri 官方 clipboard-manager 复制相对路径清单并反馈操作结果；历史时间使用相对格式，文件大小不写入文件上下文包。不实现 Token 估算。
 - [同一文件夹可保留多条历史，全局上限为 20 条](issues/07-history-cardinality.md)：打开文件夹时恢复其最新历史记录中的选择。
 - [将单实例和外部激活纳入应用外壳范围](issues/08-app-shell-scope.md)：将其纳入首版应用外壳；CLI/AHK 激活方式见 issue 19。
@@ -57,6 +58,10 @@ Status: resolved
 - [定义 fd 搜索不可用及遍历异常时的行为](issues/26-fd-search-availability-and-errors.md)：使用用户自行安装的 fd；不可用时禁用搜索并提示安装，遍历部分失败时展示已有结果并提示搜索不完整。
 - [确定忽略目录的默认规则](issues/27-ignored-directory-defaults.md)：设置全局共用，按目录名应用于任意层级；预置版本控制、依赖、构建输出、测试和缓存目录，允许逐项编辑并恢复默认值。
 - [定义文件与文件夹名称排除规则](issues/29-file-exclusion-rules.md)：规则按任意层级的名称匹配，`/` 后缀表示文件夹，文件与文件夹按统一的过滤语义影响树、搜索、递归选择和历史恢复；设置支持编辑及恢复默认。
+- [确定非 UTF-8 文本在复制时的处理](issues/42-copy-context-package.md)：非 UTF-8 解码失败按读取失败处理并触发普通复制全量取消，错误码 `EENCODING`、技术详情给出首个非法字节位置；不采用 Repomix/Gitingest 的“内容占位跳过”和系统 ANSI 代码页转码，避免产出伪造或乱码正文。
+- [确定 WebView 右键菜单的弹出与开关规则](issues/44-system-settings-and-desktop-integrations.md)：开发构建默认允许浏览器右键菜单，发布版默认屏蔽并提供系统设置开关；选择持久化到 localStorage，输入框内的原生粘贴与文件树自定义菜单不受影响。起因是验收 issue 42 时右键忽略目录漏出了 WebView2 默认菜单。
+- [确定双击文件节点用系统默认程序打开的手势取舍](issues/50-open-file-in-default-app.md)：复用 Opener 插件 `openPath`，不新增 Rust 命令；因本树行单击是“切换勾选”而非资源管理器式幂等选中，文件行勾选延后 250 毫秒、期间收到双击即取消，使双击只打开不改勾选，勾选框/空格/Enter 保持即时。
+
 ## 已完成调研（不代表最终选型）
 
 - [历史快照存储方案比较](issues/12-history-storage-research.md)：调研曾建议使用 SQLite 单库；用户已决定复制正文保存为文件快照，同时要求本次界面流程也真实读写 SQLite。[查看研究报告](https://github.com/GmavionR/KeyboardCommand/blob/research/history-storage/research/history-storage.md)

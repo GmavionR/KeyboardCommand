@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   FolderOpen,
   ChevronDown,
@@ -61,7 +62,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     e.stopPropagation();
     if (!currentPath) return;
     try {
-      await navigator.clipboard.writeText(currentPath);
+      await writeText(currentPath);
       setCopiedPath(true);
       setTimeout(() => setCopiedPath(false), 2000);
     } catch {

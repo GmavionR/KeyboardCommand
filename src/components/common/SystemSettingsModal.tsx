@@ -14,6 +14,11 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { DATABASE_FILE_NAME } from '../../data/settingsDatabase';
+import {
+  isBrowserMenuAllowed,
+  isDevBuild,
+  setBrowserMenuAllowed,
+} from '../../data/browserMenuPolicy';
 
 interface SystemSettingsModalProps {
   isOpen: boolean;
@@ -30,6 +35,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [launchAtStartup, setLaunchAtStartup] = useState(false);
   const [desktopNotification, setDesktopNotification] = useState(true);
+  const [allowBrowserMenu, setAllowBrowserMenu] = useState(isBrowserMenuAllowed);
   const [databasePath, setDatabasePath] = useState<string | null>(null);
   const [databasePathError, setDatabasePathError] = useState<string | null>(null);
 
@@ -275,6 +281,23 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                   />
                   <span>复制成功或失败时显示 Windows 原生桌面系统通知</span>
                 </label>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800/80">
+                <label className="flex items-center space-x-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={allowBrowserMenu}
+                    onChange={(e) => {
+                      setAllowBrowserMenu(e.target.checked);
+                      setBrowserMenuAllowed(e.target.checked);
+                    }}
+                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600"
+                  />
+                  <span>允许 WebView 右键菜单（发布版排查界面问题时开启，重启后仍生效）</span>
+                </label>
+                <span className="text-[10px] text-slate-400 shrink-0">
+                  {isDevBuild ? '当前为开发版，默认允许' : '当前为发布版，默认屏蔽'}
+                </span>
               </div>
             </div>
           </div>

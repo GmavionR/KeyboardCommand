@@ -38,7 +38,7 @@ export const CopyActionBar: React.FC<CopyActionBarProps> = ({
 
       <div className="flex items-center space-x-2">
         <button
-          onClick={onExecuteCopy}
+          onClick={() => onExecuteCopy()}
           disabled={isDisabled}
           className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-xs transition-all shadow-md cursor-pointer ${
             isDisabled

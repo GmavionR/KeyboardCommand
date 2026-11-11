@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import { loadFolderCopySettings, saveFolderCopySettings } from './data/settingsDatabase';
 import {
@@ -15,12 +16,13 @@ import {
   SettingsConfig,
   CopyHistoryItem,
   CopyFailureDetail,
+  ContextPackageError,
+  RefreshedPackage,
   SelectableFilesResult,
 } from './types';
 import {
   isFileAllowed,
   findNodeByPath,
-  generateContextPackageMarkdown,
   getAncestorPaths,
   normalizeFolderPath,
 } from './utils/treeUtils';
@@ -51,6 +53,32 @@ import {
 interface DirectoryPage {
   children: FileNode[];
   totalCount: number;
+}
+
+// 复制历史为 FIFO 列表，条数上限 20
+const HISTORY_LIMIT = 20;
+
+// 记录标识见 issue 48：毫秒时间戳加随机后缀，避免同毫秒两次复制撞 key
+function createHistoryStamp() {
+  const now = new Date();
+  const timestamp = now.getTime();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return {
+    id: `${timestamp}-${Math.random().toString(16).slice(2, 8).padEnd(6, '0')}`,
+    createdAt: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+    timestamp,
+  };
+}
+
+function asPackageError(error: unknown): ContextPackageError | null {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    Array.isArray((error as ContextPackageError).failures)
+  ) {
+    return error as ContextPackageError;
+  }
+  return null;
 }
 
 function updateDirectoryNode(
@@ -149,6 +177,41 @@ export default function App() {
       .then(setRecentFolders)
       .catch((error) => showToast('error', '无法读取最近文件夹', String(error)));
   }, [showToast]);
+
+  // 包正文一律由 Rust 按真实磁盘内容生成，前端不再伪造文件内容
+  const buildContextPackage = useCallback(
+    (rootPath: string, relativePaths: string[]) =>
+      invoke<string>('generate_context_package', { rootPath, relativePaths, settings }),
+    [settings]
+  );
+
+  // 生成失败时按后端语义展示失败明细；无明细的异常退化为普通错误提示
+  const reportPackageError = useCallback(
+    (error: unknown, title: string) => {
+      const packageError = asPackageError(error);
+      if (packageError) {
+        setFailureList(packageError.failures);
+        setIsFailureDialogOpen(true);
+        return;
+      }
+      showToast('error', title, String(error));
+    },
+    [showToast]
+  );
+
+  // 剪贴板写入必须先确认结果：失败则不创建历史、不提示成功
+  const copyToClipboard = useCallback(
+    async (markdown: string): Promise<boolean> => {
+      try {
+        await writeText(markdown);
+        return true;
+      } catch (error) {
+        showToast('error', '剪贴板写入失败，未创建复制历史', String(error));
+        return false;
+      }
+    },
+    [showToast]
+  );
 
   const loadFolder = useCallback(async (targetPath: string, requestedSettings?: SettingsConfig): Promise<FolderLoadOutcome> => {
     const requestedPath = targetPath.trim();
@@ -312,21 +375,24 @@ export default function App() {
             filePath: `${currentPath}\\src\\core\\scanner.ts`,
             reason: '文件正被另一后台进程独占访问 (EBUSY: resource busy or locked)',
             code: 'EBUSY',
+            detail: '状态预设演示数据：真实复制失败时此处显示 Rust 返回的底层错误。',
           },
           {
             filePath: `${currentPath}\\src\\core\\sqlite-storage.ts`,
             reason: '当前系统用户缺少对该文件的读取权限 (EACCES: permission denied)',
             code: 'EACCES',
+            detail: '状态预设演示数据：真实复制失败时此处显示 Rust 返回的底层错误。',
           },
         ]);
         setIsFailureDialogOpen(true);
         break;
 
       case 'history_partial_fail':
-        showToast('info', '正在模拟读取历史记录当前文件...', '演示部分文件丢失时的容错替换');
-        setTimeout(() => {
-          handleReReadFile(historyList[0], true);
-        }, 300);
+        if (historyList.length === 0) {
+          showToast('error', '暂无历史记录可重读', '请先复制一次文件上下文包');
+          break;
+        }
+        void handleReReadFile(historyList[0]);
         break;
 
       case 'settings_open':
@@ -347,7 +413,7 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
         if (selectedPaths.size > 0) {
-          handleExecuteCopy();
+          void handleExecuteCopy();
         } else {
           showToast('error', '无任何勾选文件', '请至少勾选一个文件后再复制');
         }
@@ -610,75 +676,58 @@ export default function App() {
   };
 
   // Preview generated package markdown
-  const handlePreviewPackage = () => {
-    const selectedArr = Array.from(selectedPaths);
-    const md = generateContextPackageMarkdown(currentPath, selectedArr, rootNode);
-    setPreviewMarkdown(md);
-    setIsPreviewOpen(true);
+  const handlePreviewPackage = async () => {
+    if (selectedPaths.size === 0) return;
+    setIsCopying(true);
+    try {
+      const md = await buildContextPackage(currentPath, Array.from(selectedPaths));
+      setPreviewMarkdown(md);
+      setIsPreviewOpen(true);
+    } catch (error) {
+      reportPackageError(error, '无法生成文件上下文包');
+    } finally {
+      setIsCopying(false);
+    }
   };
 
   // Execute Copy package (Requirement: copy button disabled when 0 selected, short success toast)
-  const handleExecuteCopy = () => {
-    if (selectedPaths.size === 0) return;
+  const handleExecuteCopy = async (pathsToCopy?: string[]) => {
+    const selectedArr = pathsToCopy ?? Array.from(selectedPaths);
+    if (selectedArr.length === 0) return;
 
     setIsCopying(true);
+    try {
+      const md = await buildContextPackage(currentPath, selectedArr);
+      if (!(await copyToClipboard(md))) return;
 
-    if (currentPreset === 'copy_failure_dialog') {
-      setTimeout(() => {
-        setIsCopying(false);
-        setFailureList([
-          {
-            filePath: `${currentPath}\\src\\core\\scanner.ts`,
-            reason: '文件已被另一后台进程独占锁定 (EBUSY: resource busy or locked)',
-            code: 'EBUSY',
-          },
-          {
-            filePath: `${currentPath}\\src\\core\\sqlite-storage.ts`,
-            reason: '当前系统用户缺少对该文件的读取权限 (EACCES: permission denied)',
-            code: 'EACCES',
-          },
-        ]);
-        setIsFailureDialogOpen(true);
-      }, 400);
-      return;
-    }
-
-    setTimeout(() => {
-      setIsCopying(false);
-      const selectedArr = Array.from(selectedPaths);
-      const md = generateContextPackageMarkdown(currentPath, selectedArr, rootNode);
-
-      navigator.clipboard.writeText(md);
-
-      const now = new Date();
-      const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
+      const stamp = createHistoryStamp();
       const newHistoryItem: CopyHistoryItem = {
-        id: `hist-${Date.now()}`,
-        createdAt: timeStr,
-        timestamp: Date.now(),
+        id: stamp.id,
+        createdAt: stamp.createdAt,
+        timestamp: stamp.timestamp,
         sourceFolder: currentPath,
         fileCount: selectedArr.length,
         filePaths: selectedArr,
         packageSnapshot: md,
       };
 
-      setHistoryList((prev) => {
-        const next = [newHistoryItem, ...prev];
-        return next.slice(0, 20);
-      });
+      setHistoryList((prev) => [newHistoryItem, ...prev].slice(0, HISTORY_LIMIT));
 
       showToast(
         'success',
-        `已复制文件上下文包到剪贴板！`,
+        '已复制文件上下文包到剪贴板！',
         `共 ${selectedArr.length} 个文件，已加入复制历史`
       );
-    }, 350);
+    } catch (error) {
+      reportPackageError(error, '无法生成文件上下文包');
+    } finally {
+      setIsCopying(false);
+    }
   };
 
   // History Action 1: Copy saved snapshot directly
-  const handleCopyHistorySnapshot = (item: CopyHistoryItem) => {
-    navigator.clipboard.writeText(item.packageSnapshot);
+  const handleCopyHistorySnapshot = async (item: CopyHistoryItem) => {
+    if (!(await copyToClipboard(item.packageSnapshot))) return;
     showToast(
       'success',
       '已复制保存的历史快照',
@@ -686,65 +735,49 @@ export default function App() {
     );
   };
 
-  // History Action 2: Re-read current files
-  const handleReReadFile = (item: CopyHistoryItem, forcePartialFail = false) => {
-    if (forcePartialFail) {
-      const failedPath = item.filePaths[item.filePaths.length - 1];
-      const successPaths = item.filePaths.slice(0, -1);
+  // History Action 2: Re-read current files（忽略失败项，仅在有成功文件时替换该条历史）
+  const handleReReadFile = async (item: CopyHistoryItem) => {
+    try {
+      const result = await invoke<RefreshedPackage>('refresh_context_package', {
+        rootPath: item.sourceFolder,
+        relativePaths: item.filePaths,
+        settings,
+      });
 
-      if (successPaths.length > 0) {
-        const md = generateContextPackageMarkdown(item.sourceFolder, successPaths, rootNode);
-        navigator.clipboard.writeText(md);
-
-        const now = new Date();
-        const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-        const updatedItem: CopyHistoryItem = {
-          ...item,
-          id: `hist-reread-${Date.now()}`,
-          createdAt: timeStr,
-          timestamp: Date.now(),
-          fileCount: successPaths.length,
-          filePaths: successPaths,
-          packageSnapshot: md,
-        };
-
-        setHistoryList((prev) => prev.map((h) => (h.id === item.id ? updatedItem : h)));
-
-        showToast(
-          'info',
-          `重读部分成功：已复制 ${successPaths.length} 个有效文件`,
-          `失败项：${failedPath} (文件不存在或已被删除)，已用新快照替换历史记录`
-        );
-      } else {
+      if (result.markdown === null) {
         showToast(
           'error',
-          '重读全部失败',
-          '所有文件均不可读取，已保留原历史快照与剪贴板不变'
+          `重读全部失败：${result.failures.length} 个文件均不可读取`,
+          '已保留原历史快照与剪贴板不变'
         );
+        return;
       }
-    } else {
-      const md = generateContextPackageMarkdown(item.sourceFolder, item.filePaths, rootNode);
-      navigator.clipboard.writeText(md);
 
-      const now = new Date();
-      const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      if (!(await copyToClipboard(result.markdown))) return;
 
+      const stamp = createHistoryStamp();
       const updatedItem: CopyHistoryItem = {
         ...item,
-        id: `hist-reread-${Date.now()}`,
-        createdAt: timeStr,
-        timestamp: Date.now(),
-        packageSnapshot: md,
+        createdAt: stamp.createdAt,
+        timestamp: stamp.timestamp,
+        fileCount: result.paths.length,
+        filePaths: result.paths,
+        packageSnapshot: result.markdown,
       };
-
       setHistoryList((prev) => prev.map((h) => (h.id === item.id ? updatedItem : h)));
 
+      const skipped = result.failures.length;
       showToast(
-        'success',
-        `已从磁盘重新读取 ${item.filePaths.length} 个当前文件并复制到剪贴板！`,
-        '已更新并刷新该条历史记录时间戳'
+        skipped > 0 ? 'info' : 'success',
+        skipped > 0
+          ? `重读部分成功：已复制 ${result.paths.length} 个有效文件`
+          : `已从磁盘重新读取 ${result.paths.length} 个当前文件并复制到剪贴板！`,
+        skipped > 0
+          ? `已跳过 ${skipped} 个失败文件，历史记录已用新快照替换`
+          : '已更新并刷新该条历史记录时间戳'
       );
+    } catch (error) {
+      reportPackageError(error, '无法重新读取文件');
     }
   };
 
@@ -762,35 +795,33 @@ export default function App() {
 
   // Right-click action: "仅复制当前文件" (Resolved grilling rule)
   // Generates single-file context package, adds 1 history item, does NOT change selectedPaths!
-  const handleCopySingleFile = (node: FileNode) => {
-    const md = generateContextPackageMarkdown(currentPath, [node.path], rootNode);
+  const handleCopySingleFile = async (node: FileNode) => {
+    try {
+      const md = await buildContextPackage(currentPath, [node.path]);
+      if (!(await copyToClipboard(md))) return;
 
-    navigator.clipboard.writeText(md);
+      const stamp = createHistoryStamp();
+      const newHistoryItem: CopyHistoryItem = {
+        id: stamp.id,
+        createdAt: stamp.createdAt,
+        timestamp: stamp.timestamp,
+        sourceFolder: currentPath,
+        fileCount: 1,
+        filePaths: [node.path],
+        packageSnapshot: md,
+      };
 
-    const now = new Date();
-    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      setHistoryList((prev) => [newHistoryItem, ...prev].slice(0, HISTORY_LIMIT));
 
-    const newHistoryItem: CopyHistoryItem = {
-      id: `hist-single-${Date.now()}`,
-      createdAt: timeStr,
-      timestamp: Date.now(),
-      sourceFolder: currentPath,
-      fileCount: 1,
-      filePaths: [node.path],
-      packageSnapshot: md,
-    };
-
-    setHistoryList((prev) => {
-      const next = [newHistoryItem, ...prev];
-      return next.slice(0, 20);
-    });
-
-    // Operates without changing any existing file or folder selection states
-    showToast(
-      'success',
-      `已复制单文件上下文包 (仅当前文件: ${node.name})`,
-      `不改变已有的 ${selectedPaths.size} 个选择状态，已按普通复制存入历史`
-    );
+      // Operates without changing any existing file or folder selection states
+      showToast(
+        'success',
+        `已复制单文件上下文包 (仅当前文件: ${node.name})`,
+        `不改变已有的 ${selectedPaths.size} 个选择状态，已按普通复制存入历史`
+      );
+    } catch (error) {
+      reportPackageError(error, '无法生成单文件上下文包');
+    }
   };
 
   const handleRevealNodeInFileManager = async (node: FileNode) => {
@@ -805,6 +836,20 @@ export default function App() {
       showToast(
         'error',
         '无法在文件资源管理器中显示',
+        `${absoluteNodePath}\n${String(error)}`
+      );
+    }
+  };
+
+  const handleOpenFileInDefaultApp = async (node: FileNode) => {
+    if (node.type !== 'file') return;
+    const absoluteNodePath = `${currentPath.replace(/[\\/]+$/, '')}\\${node.path.replace(/\//g, '\\')}`;
+    try {
+      await openPath(absoluteNodePath);
+    } catch (error) {
+      showToast(
+        'error',
+        '无法用系统默认程序打开文件',
         `${absoluteNodePath}\n${String(error)}`
       );
     }
@@ -943,6 +988,7 @@ export default function App() {
                   onLoadMore={handleLoadMoreChildren}
                   onCopySingleFile={handleCopySingleFile}
                   onRevealNodeInFileManager={handleRevealNodeInFileManager}
+                  onOpenFileInDefaultApp={handleOpenFileInDefaultApp}
                   onExpandAll={handleExpandAllFolders}
                   onCollapseAll={handleCollapseAllFolders}
                   onSelectAllValid={handleSelectAllAllowedFiles}
@@ -1061,6 +1107,7 @@ export default function App() {
                   onLoadMore={handleLoadMoreChildren}
                   onCopySingleFile={handleCopySingleFile}
                   onRevealNodeInFileManager={handleRevealNodeInFileManager}
+                  onOpenFileInDefaultApp={handleOpenFileInDefaultApp}
                   onExpandAll={handleExpandAllFolders}
                   onCollapseAll={handleCollapseAllFolders}
                   onSelectAllValid={handleSelectAllAllowedFiles}
@@ -1130,25 +1177,28 @@ export default function App() {
         failures={failureList}
         onRetry={() => {
           setIsFailureDialogOpen(false);
-          handleExecuteCopy();
+          void handleExecuteCopy();
         }}
         onExcludeFailedAndRetry={(failedPaths) => {
+          const failed = new Set(failedPaths);
+          const remaining = Array.from(selectedPaths).filter((path) => !failed.has(path));
           setSelectedPaths((prev) => {
             const next = new Set(prev);
-            failedPaths.forEach((fp) => {
-              const rel = fp.replace(currentPath + '\\', '').replace(/\\/g, '/');
-              next.delete(rel);
-            });
+            failed.forEach((path) => next.delete(path));
             return next;
           });
           setSelectedSizes((previous) => {
             const next = new Map(previous);
-            failedPaths.forEach((fp) => next.delete(fp.replace(currentPath + '\\', '').replace(/\\/g, '/')));
+            failed.forEach((path) => next.delete(path));
             return next;
           });
           setIsFailureDialogOpen(false);
+          if (remaining.length === 0) {
+            showToast('error', '剔除后已无可选文件', '请重新勾选后再复制');
+            return;
+          }
           showToast('info', '已剔除失效项并继续');
-          setTimeout(() => handleExecuteCopy(), 200);
+          void handleExecuteCopy(remaining);
         }}
       />
 

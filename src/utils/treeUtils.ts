@@ -181,35 +181,3 @@ export function formatBytes(bytes?: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
-
-export function generateContextPackageMarkdown(
-  rootFolder: string,
-  selectedPaths: string[],
-  rootNode: FileNode
-): string {
-  const now = new Date();
-  const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-  let doc = `### 文件上下文包 (${selectedPaths.length} 个文件)\n`;
-  doc += `生成时间: ${timeStr}\n`;
-  doc += `来源根目录: ${rootFolder}\n\n`;
-  doc += `#### 文件清单:\n`;
-  selectedPaths.forEach((p, idx) => {
-    doc += `${idx + 1}. \`${p}\`\n`;
-  });
-  doc += `\n========================================\n\n`;
-
-  selectedPaths.forEach((p) => {
-    const node = findNodeByPath(rootNode, p);
-    const content = node?.content || `// 模拟读取自本地文件: ${p}`;
-    const ext = p.split('.').pop() || '';
-    const lang = ['ts', 'tsx', 'js', 'jsx', 'json', 'css', 'html', 'md', 'py', 'rs'].includes(ext) ? ext : '';
-
-    doc += `#### [FILE: ${p}]\n`;
-    doc += `\`\`\`${lang}\n`;
-    doc += content + `\n`;
-    doc += `\`\`\`\n\n`;
-  });
-
-  return doc;
-}

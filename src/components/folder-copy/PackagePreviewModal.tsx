@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { X, Copy, Check, FileText } from 'lucide-react';
 
 interface PackagePreviewModalProps {
@@ -18,8 +19,12 @@ export const PackagePreviewModal: React.FC<PackagePreviewModalProps> = ({
 
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(markdownContent);
+  const handleCopy = async () => {
+    try {
+      await writeText(markdownContent);
+    } catch {
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

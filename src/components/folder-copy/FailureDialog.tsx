@@ -107,9 +107,9 @@ export const FailureDialog: React.FC<FailureDialogProps> = ({
                   {/* Expanded error trace */}
                   {isExp && (
                     <div className="mt-2.5 pt-2 border-t border-slate-200 dark:border-slate-800/80 pl-6 text-[11px] text-slate-600 dark:text-slate-400 font-mono bg-white dark:bg-slate-950/80 p-2 rounded">
-                      <div>底层调用栈错误信息:</div>
+                      <div>技术详情:</div>
                       <div className="text-rose-600 dark:text-rose-400/90 mt-1">
-                        SystemError [{item.code}]: failed to open file handle at `{item.filePath}`. File is locked by another process or access is denied.
+                        {item.detail}
                       </div>
                     </div>
                   )}

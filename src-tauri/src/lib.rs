@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use tauri::{Emitter, Manager, State};
 
+mod context_package;
+
 const DEFAULT_ROUTE: &str = "/folder-copy";
 
 #[derive(Clone, Serialize)]
@@ -15,7 +17,7 @@ struct ActivationRequest {
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct TreeSettings {
+pub(crate) struct TreeSettings {
     whitelist: Vec<String>,
     exclusions: Vec<String>,
     ignored_directories: Vec<String>,
@@ -152,7 +154,7 @@ fn initial_activation(request: State<'_, ActivationRequest>) -> ActivationReques
     request.inner().clone()
 }
 
-fn user_error(action: &str, path: &Path, error: impl std::fmt::Display) -> String {
+pub(crate) fn user_error(action: &str, path: &Path, error: impl std::fmt::Display) -> String {
     format!("{action}失败：{}（{error}）", path.display())
 }
 
@@ -180,7 +182,7 @@ fn is_excluded_file(name: &str, settings: &TreeSettings) -> bool {
         .any(|rule| path_matches(rule, name))
 }
 
-fn is_allowed_file(name: &str, settings: &TreeSettings) -> bool {
+pub(crate) fn is_allowed_file(name: &str, settings: &TreeSettings) -> bool {
     if is_excluded_file(name, settings) {
         return false;
     }
@@ -203,7 +205,7 @@ fn is_allowed_file(name: &str, settings: &TreeSettings) -> bool {
         .any(|rule| rule.eq_ignore_ascii_case(&extension))
 }
 
-fn directory_block_reason(
+pub(crate) fn directory_block_reason(
     name: &str,
     settings: &TreeSettings,
 ) -> (bool, Option<String>, bool, Option<String>) {
@@ -552,7 +554,9 @@ pub fn run() {
             initial_activation,
             load_directory_tree,
             load_directory_page,
-            list_selectable_files
+            list_selectable_files,
+            context_package::generate_context_package,
+            context_package::refresh_context_package
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
