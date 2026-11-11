@@ -9,15 +9,26 @@
 
 **设计来源：** [界面绘制说明](../../../docs/design/文件夹复制界面绘制说明.md) 顶部工具区的「最近文件夹下拉框」是当前基准；术语见 [`GLOSSARY.md`](../../../GLOSSARY.md) 的「最近文件夹」，范围与排序见 [issue 33](33-history-list-scope-and-order.md)。存储机制沿用 [issue 24](24-database-workflow-responsibility.md) 已打通的 SQLite 读写通路。
 
-- [ ] 每次**成功**加载文件夹时记录该路径：对话框选择、手动输入、下拉选择和刷新都经同一 `loadFolder` 流程，任一路径加载成功都要写入；加载失败的路径不写入。（原文的「外部激活」已更正：命令行只传 `--route`，从不携带文件夹路径，见 `parse_activation_args`，故不构成加载入口。）
+- [x] 每次**成功**加载文件夹时记录该路径：对话框选择、手动输入、下拉选择和刷新都经同一 `loadFolder` 流程，任一路径加载成功都要写入；加载失败的路径不写入。（原文的「外部激活」已更正：命令行只传 `--route`，从不携带文件夹路径，见 `parse_activation_args`，故不构成加载入口。）
 - [x] 数据落在现有设置数据库 `settings.db` 的单表 `recent_folder(path_key TEXT PRIMARY KEY, path TEXT NOT NULL, last_used_at INTEGER NOT NULL)`。`path_key` 是归一化路径（小写、反斜杠转正斜杠、去尾部斜杠），`path` 保留用户原始写法仅用于显示。
 - [ ] 上限固定 **10 条，写死，不提供配置项**。启动时按 `last_used_at` 倒序读取前 10 条；重复加载同一文件夹只更新时间不新增条目；第 11 个不同路径进入时淘汰最久未使用的一条。
 - [ ] 从下拉选择的路径加载失败时，显示中文错误提示，并把该条从最近文件夹列表中移除，避免死路径占满 10 个槽位。
-- [ ] 首版不提供「清空最近文件夹」和单条删除入口。
+- [x] 首版不提供「清空最近文件夹」和单条删除入口。
 - [ ] 加载或切换文件夹后，复制历史面板**强制切回「当前目录」筛选**，即使用户此前手动切到「所有文件夹」。（补齐 issue 33 已规定但代码未实现的默认口径。）
-- [ ] 按目录筛选复制历史、最近文件夹去重和 `sourceFolder` 匹配统一使用同一归一化路径比较；显示与存储仍保留用户原始写法。当前 `item.sourceFolder === currentFolderPath` 的精确字符串比较会使 `E:\Proj` 与 `e:/proj/` 视为两个目录、导致历史记录查不出来，须修正。
+- [x] 按目录筛选复制历史、最近文件夹去重和 `sourceFolder` 匹配统一使用同一归一化路径比较；显示与存储仍保留用户原始写法。当前 `item.sourceFolder === currentFolderPath` 的精确字符串比较会使 `E:\Proj` 与 `e:/proj/` 视为两个目录、导致历史记录查不出来，须修正。
 - [ ] 最近文件夹读写失败时显示中文错误，列表按空处理，不阻塞文件夹加载。
 - [ ] 在桌面应用中手动验收重启后保留、大小写与斜杠差异去重、10 条淘汰、死路径移除，以及选择下拉项后面板联动只显示该目录记录。（原步骤要求先用 ego-browser 对照 playground；playground 已随 issue 46 迁入应用后删除，`find` 确认仓库内已无该目录，浏览器原型对照无从执行。视觉与交互基准改为 `docs/design/文件夹复制界面绘制说明.md`，与 issue 39 记录的同一情况一致。）
+
+## 桌面验收记录（2026-11-11 第二轮，用户实际操作）
+
+用户在桌面端连续选择并加载了多个真实目录，下拉出现多条记录。只读查询生产库 `%APPDATA%\com.keyboardcommand.app\settings.db` 得到 7 行，逐条比对界面行为：
+
+- `path` 保留原始写法（`F:\tempFiles`、`D:\chromeDownload\实现codex的讨论`），`path_key` 为归一化形式（`f:/tempfiles`、`d:/chromedownload/实现codex的讨论`）——反斜杠转正斜杠、小写、去尾斜杠，CJK 段完整保留。归一化去重与「显示保留原样」同时成立，第 7 项勾掉。
+- `typeof(last_used_at)` 全为 `integer`，毫秒值无损；`ORDER BY last_used_at DESC` 的结果顺序与下拉从上到下一致（最新为 `F:\workspace\jeecg-boot`）。
+- 7 行 `path_key` 互不重复，其中 `D:\chromeDownload` 与其子目录 `D:\chromeDownload\ntfslinksview_schinese1` 作为不同目录各自占一条，未发生前缀误合并。
+- 插件绑定层复核：`select` 与 `execute` 走 `wrapper.rs:223` 同一套按位置 `.bind()` 的代码；JS 数字按 f64/REAL 绑定，实测整数值 REAL 进 `LIMIT` 正常（`CAST(10 AS REAL)` 返回 10 行），仅非整数才 `datatype mismatch`，而 `RECENT_FOLDER_LIMIT=10` 与 `Date.now()` 恒为整数，故无需改代码。
+
+**仍未完成的桌面项（需用户在窗口里观察）：** 重启后保留（第 4 项、第 14 项）、第 11 个不同路径进入时淘汰最久未用（当前仅 7 条，未触及上限）、死路径移除、切换文件夹后历史面板强制回「当前目录」、读写失败不阻塞加载。为此已准备临时探针目录 `C:\Users\40294\AppData\Local\Temp\kbc-dead-probe`（可安全加载后删除，用来制造死路径），验收完由我清理。
 
 ## Comments
 
