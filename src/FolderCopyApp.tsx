@@ -5,6 +5,7 @@ import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import { loadFolderCopySettings, saveFolderCopySettings } from './data/settingsDatabase';
+import { checkFdAvailable } from './data/searchBackend';
 import {
   RECENT_FOLDER_LIMIT,
   forgetRecentFolder,
@@ -90,6 +91,17 @@ function updateDirectoryNode(
   return changed ? { ...node, children } : node;
 }
 
+// 首页加载与分页追加共用同一形状：children 为 undefined 时即首页
+function appendDirectoryPage(node: FileNode, page: DirectoryPage): FileNode {
+  const children = [...(node.children ?? []), ...page.children];
+  return {
+    ...node,
+    children,
+    childrenCount: page.totalCount,
+    hasMoreChildren: children.length < page.totalCount,
+  };
+}
+
 type FolderLoadOutcome = 'loaded' | 'rejected' | 'unreadable';
 
 export default function App() {
@@ -146,9 +158,9 @@ export default function App() {
 
   // Design State Presets & Overrides for UI evaluation
   const [currentPreset, setCurrentPreset] = useState<DesignStatePreset>('normal');
+  // fd 可用性来自真实检测，不再由状态预设伪造
   const [isFdAvailable, setIsFdAvailable] = useState(true);
-  const [isSearchIncomplete, setIsSearchIncomplete] = useState(false);
-  const [forcedSearchQuery, setForcedSearchQuery] = useState<string | undefined>(undefined);
+  const [presetSearchQuery, setPresetSearchQuery] = useState<string | undefined>(undefined);
 
   // Toast feedback
   const [toast, setToast] = useState<{
@@ -173,6 +185,16 @@ export default function App() {
       .then(setRecentFolders)
       .catch((error) => showToast('error', '无法读取最近文件夹', String(error)));
   }, [showToast]);
+
+  const recheckFd = useCallback(() => {
+    void checkFdAvailable()
+      .then(setIsFdAvailable)
+      .catch(() => setIsFdAvailable(false));
+  }, []);
+
+  useEffect(() => {
+    recheckFd();
+  }, [recheckFd]);
 
   // 包正文一律由 Rust 按真实磁盘内容生成，前端不再伪造文件内容
   const buildContextPackage = useCallback(
@@ -366,9 +388,7 @@ export default function App() {
 
     switch (preset) {
       case 'normal':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
-        setForcedSearchQuery('');
+        setPresetSearchQuery('');
         setSelectedPaths(new Set());
         setSelectedSizes(new Map());
         setSelectableCounts(new Map());
@@ -378,32 +398,14 @@ export default function App() {
         break;
 
       case 'search_over10':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
-        setForcedSearchQuery('icon');
+        setPresetSearchQuery('icon');
         break;
 
       case 'search_empty':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
-        setForcedSearchQuery('non_existent_xyz_file');
-        break;
-
-      case 'search_fd_missing':
-        setIsFdAvailable(false);
-        setIsSearchIncomplete(false);
-        setForcedSearchQuery('');
-        break;
-
-      case 'search_incomplete':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(true);
-        setForcedSearchQuery('core');
+        setPresetSearchQuery('non_existent_xyz_file');
         break;
 
       case 'empty_selection':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
         setSelectedPaths(new Set());
         setSelectedSizes(new Map());
         setSelectableCounts(new Map());
@@ -413,8 +415,6 @@ export default function App() {
         break;
 
       case 'empty_folder':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
         setSelectedPaths(new Set());
         setSelectedSizes(new Map());
         setSelectableCounts(new Map());
@@ -429,8 +429,6 @@ export default function App() {
         break;
 
       case 'large_dir':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
         setExpandedFolders(new Set());
         if (viewportMode === 'narrow') setNarrowActiveTab('tree');
         showToast('info', '大目录分页使用真实目录数据', '选择包含超过 50 个直接子项的目录进行验收');
@@ -467,8 +465,6 @@ export default function App() {
         break;
 
       case 'copy_single_file':
-        setIsFdAvailable(true);
-        setIsSearchIncomplete(false);
         showToast('info', '请从当前真实文件树选择文件', '该状态预设不会加载模拟目录');
         break;
     }
@@ -491,7 +487,7 @@ export default function App() {
   }, [selectedPaths, rootNode, currentPath]);
 
   // Toggle single file selection
-  const handleToggleFileSelect = (path: string) => {
+  const handleToggleFileSelect = (path: string, size?: number) => {
     const node = findNodeByPath(rootNode, path);
     const isSelected = selectedPaths.has(path);
     setSelectedPaths((prev) => {
@@ -503,7 +499,8 @@ export default function App() {
     setSelectedSizes((sizes) => {
       const updated = new Map(sizes);
       if (isSelected) updated.delete(path);
-      else updated.set(path, node?.size ?? 0);
+      // 搜索结果可能指向尚未加载进树的文件，此时用 fd 给出的大小
+      else updated.set(path, node?.size ?? size ?? 0);
       return updated;
     });
   };
@@ -570,12 +567,7 @@ export default function App() {
         settings,
       });
       if (requestVersion !== folderLoadVersion.current) return;
-      setRootNode((root) => updateDirectoryNode(root, path, (directory) => ({
-        ...directory,
-        children: page.children,
-        childrenCount: page.totalCount,
-        hasMoreChildren: page.totalCount > page.children.length,
-      })));
+      setRootNode((root) => updateDirectoryNode(root, path, (directory) => appendDirectoryPage(directory, page)));
     } catch (error) {
       showToast('error', '无法读取子目录', String(error));
       setExpandedFolders((previous) => {
@@ -606,15 +598,7 @@ export default function App() {
         settings,
       });
       if (requestVersion !== folderLoadVersion.current) return;
-      setRootNode((root) => updateDirectoryNode(root, path, (current) => {
-        const children = [...(current.children ?? []), ...page.children];
-        return {
-          ...current,
-          children,
-          childrenCount: page.totalCount,
-          hasMoreChildren: children.length < page.totalCount,
-        };
-      }));
+      setRootNode((root) => updateDirectoryNode(root, path, (current) => appendDirectoryPage(current, page)));
     } catch (error) {
       showToast('error', '无法加载更多目录项', String(error));
     } finally {
@@ -671,21 +655,76 @@ export default function App() {
     }
   };
 
-  // Locate node in tree and expand all ancestors
-  const handleLocateNodeInTree = (path: string, isFolder: boolean) => {
+  // 定位必须真正让目标节点出现在树里：逐级展开祖先，缺页就继续追加，直到目标可见
+  const handleLocateNodeInTree = async (path: string, isFolder: boolean) => {
+    if (!currentPath) return;
+    const requestVersion = folderLoadVersion.current;
+    if (viewportMode === 'narrow') setNarrowActiveTab('tree');
+
     const ancestors = getAncestorPaths(path);
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      ancestors.forEach((a) => next.add(a));
+    setExpandedFolders((previous) => {
+      const next = new Set(previous);
+      ancestors.forEach((ancestor) => next.add(ancestor));
       if (isFolder) next.add(path);
       return next;
     });
-    setHighlightedPath(path);
-    if (viewportMode === 'narrow') {
-      setNarrowActiveTab('tree');
+
+    // 循环内需要读到刚写入的子项，所以同时维护一份本地树快照
+    let tree = rootNode;
+    const writeNode = (targetPath: string, update: (node: FileNode) => FileNode) => {
+      tree = updateDirectoryNode(tree, targetPath, update);
+      setRootNode((root) => updateDirectoryNode(root, targetPath, update));
+    };
+
+    const loadNextPage = async (directoryPath: string): Promise<boolean> => {
+      const directory = findNodeByPath(tree, directoryPath);
+      if (!directory || directory.type !== 'directory') return false;
+      if (directory.children !== undefined && !directory.hasMoreChildren) return false;
+
+      let page: DirectoryPage;
+      try {
+        page = await invoke<DirectoryPage>('load_directory_page', {
+          rootPath: currentPath,
+          relativePath: directoryPath,
+          offset: directory.children?.length ?? 0,
+          settings,
+        });
+      } catch (error) {
+        showToast('error', '无法定位到该路径', String(error));
+        return false;
+      }
+      if (requestVersion !== folderLoadVersion.current) return false;
+      if (page.children.length === 0) return false;
+
+      writeNode(directoryPath, (current) => appendDirectoryPage(current, page));
+      return true;
+    };
+
+    const ensureChildLoaded = async (directoryPath: string, childName: string) => {
+      for (;;) {
+        const directory = findNodeByPath(tree, directoryPath);
+        if (!directory || directory.type !== 'directory') return false;
+        if (directory.children?.some((child) => child.name === childName)) return true;
+        if (!(await loadNextPage(directoryPath))) return false;
+      }
+    };
+
+    // 根目录用空串表示，ancestors 不含根
+    const ancestorChain = ['', ...ancestors];
+    for (let index = 0; index < ancestorChain.length; index += 1) {
+      const childPath = index + 1 < ancestorChain.length ? ancestorChain[index + 1] : path;
+      const childName = childPath.slice(childPath.lastIndexOf('/') + 1);
+      if (!(await ensureChildLoaded(ancestorChain[index], childName))) return;
     }
+
+    // 目录定位后会被展开，必须真正读出子项，否则呈现假空目录
+    if (isFolder && findNodeByPath(tree, path)?.children === undefined) {
+      await loadNextPage(path);
+    }
+
+    setHighlightedPath(path);
     setTimeout(() => {
-      setHighlightedPath((curr) => (curr === path ? null : curr));
+      setHighlightedPath((current) => (current === path ? null : current));
     }, 2800);
   };
 
@@ -1013,14 +1052,14 @@ export default function App() {
       {/* 4. Search Area: Single Dedicated Row (搜索输入框单独占一行) */}
       <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 transition-colors duration-150">
         <SearchBar
-          rootNode={rootNode}
+          rootPath={currentPath}
           settings={settings}
           selectedPaths={selectedPaths}
           onToggleFileSelect={handleToggleFileSelect}
-          onLocateNodeInTree={handleLocateNodeInTree}
+          onLocateNodeInTree={(path, isFolder) => void handleLocateNodeInTree(path, isFolder)}
           isFdAvailable={isFdAvailable}
-          isSearchIncomplete={isSearchIncomplete}
-          forcedQuery={forcedSearchQuery}
+          onRecheckFd={recheckFd}
+          presetQuery={presetSearchQuery}
         />
       </div>
 

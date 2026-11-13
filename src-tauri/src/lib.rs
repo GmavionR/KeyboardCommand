@@ -6,6 +6,7 @@ use tauri::{Emitter, Manager, State};
 
 mod context_package;
 mod history_store;
+mod search;
 
 const DEFAULT_ROUTE: &str = "/folder-copy";
 
@@ -556,6 +557,8 @@ pub fn run() {
             load_directory_tree,
             load_directory_page,
             list_selectable_files,
+            search::fd_available,
+            search::search_paths,
             context_package::generate_context_package,
             context_package::refresh_context_package,
             context_package::filter_selectable_paths,

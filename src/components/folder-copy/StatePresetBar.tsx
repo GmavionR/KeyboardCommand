@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Sliders,
   CheckCircle2,
-  AlertTriangle,
   XCircle,
   Search,
   FolderTree,
@@ -19,8 +18,6 @@ export type DesignStatePreset =
   | 'normal'
   | 'search_over10'
   | 'search_empty'
-  | 'search_fd_missing'
-  | 'search_incomplete'
   | 'empty_selection'
   | 'empty_folder'
   | 'empty_history'
@@ -60,7 +57,7 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
       id: 'search_over10',
       label: '2. 搜索>10条',
       icon: <Search className="w-3.5 h-3.5 text-amber-400" />,
-      desc: '搜索单占一行，结果过多时提示“结果过多，请输入更准确的路径”',
+      desc: '搜索单占一行，真实 fd 结果过多时提示“结果过多，请输入更准确的路径”',
     },
     {
       id: 'search_empty',
@@ -69,62 +66,50 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
       desc: '搜索词无匹配时提示“没有搜索到”',
     },
     {
-      id: 'search_fd_missing',
-      label: '4. fd不可用',
-      icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />,
-      desc: '禁用输入框，在输入框旁提示安装 fd',
-    },
-    {
-      id: 'search_incomplete',
-      label: '5. 搜索不完整',
-      icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />,
-      desc: '遍历受限时保留可访问结果并提示“搜索不完整”',
-    },
-    {
       id: 'empty_selection',
-      label: '6. 空选择',
+      label: '4. 空选择',
       icon: <FolderTree className="w-3.5 h-3.5 text-indigo-400" />,
       desc: '没有选中文件时禁用复制按钮',
     },
     {
       id: 'empty_folder',
-      label: '7. 空目录',
+      label: '5. 空目录',
       icon: <FolderX className="w-3.5 h-3.5 text-slate-400" />,
       desc: '空文件夹/无符合规则文件的明确空状态',
     },
     {
       id: 'empty_history',
-      label: '8. 无历史记录',
+      label: '6. 无历史记录',
       icon: <History className="w-3.5 h-3.5 text-slate-400" />,
       desc: '无复制历史记录时的明确空状态视图',
     },
     {
       id: 'large_dir',
-      label: '9. 大目录分页',
+      label: '7. 大目录分页',
       icon: <FolderTree className="w-3.5 h-3.5 text-sky-400" />,
-      desc: '展开75项 icons 目录，首批30项分批追加',
+      desc: '展开超过阈值的大目录，首批30项分批追加',
     },
     {
       id: 'copy_failure_dialog',
-      label: '10. 复制失败',
+      label: '8. 复制失败',
       icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
       desc: '读取失败取消整次复制，弹窗列出失败路径和原因，保留勾选',
     },
     {
       id: 'history_partial_fail',
-      label: '11. 历史重读',
+      label: '9. 历史重读',
       icon: <History className="w-3.5 h-3.5 text-purple-400" />,
       desc: '按磁盘当前内容重读首条历史，失败文件自动忽略并提示',
     },
     {
       id: 'settings_open',
-      label: '12. 设置弹窗',
+      label: '10. 设置弹窗',
       icon: <Settings className="w-3.5 h-3.5 text-cyan-400" />,
       desc: '4个纵向分区、独立恢复默认值、大目录正整数校验与SQLite持久化',
     },
     {
       id: 'copy_single_file',
-      label: '13. 右键复制单文件',
+      label: '11. 右键复制单文件',
       icon: <Copy className="w-3.5 h-3.5 text-blue-400" />,
       desc: '树中右键可选文件点击“仅复制当前文件”，生成单文件包并存入历史，不改变已有勾选状态',
     },
@@ -160,9 +145,9 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
           <button
             onClick={() => setIsCollapsed(false)}
             className="flex items-center space-x-1 px-2 py-0.5 bg-white dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded border border-slate-300 dark:border-slate-700 text-[10px] font-medium transition-colors cursor-pointer shadow-2xs"
-            title="展开 13 种状态快捷评测工具条"
+            title="展开 11 种状态快捷评测工具条"
           >
-            <span>展开评测状态 (13)</span>
+            <span>展开评测状态 (11)</span>
           </button>
         </div>
       </div>

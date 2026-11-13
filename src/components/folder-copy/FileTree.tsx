@@ -125,16 +125,17 @@ export const FileTree: React.FC<FileTreeProps> = ({
   }, [highlightedPath]);
 
   useEffect(() => {
-    const visiblePaths = getFlattenedVisibleNodes(rootNode, expandedFolders)
-      .map((node) => node.path)
-      .filter(Boolean);
-    if (focusedPath && visiblePaths.includes(focusedPath)) return;
-    setFocusedPath(visiblePaths[0] ?? null);
+    // 根目录路径为空串，也必须能被聚焦，否则顶层节点的左键无法回到根
+    const visiblePaths = getFlattenedVisibleNodes(rootNode, expandedFolders).map(
+      (node) => node.path
+    );
+    if (focusedPath !== null && visiblePaths.includes(focusedPath)) return;
+    setFocusedPath(visiblePaths[1] ?? visiblePaths[0] ?? null);
   }, [rootNode, expandedFolders, focusedPath]);
 
   // Smoothly scroll the focused element into view
   useEffect(() => {
-    if (!focusedPath || !containerRef.current) return;
+    if (focusedPath === null || !containerRef.current) return;
     try {
       const el = containerRef.current.querySelector(
         `[data-node-path="${CSS.escape(focusedPath)}"]`
@@ -145,7 +146,8 @@ export const FileTree: React.FC<FileTreeProps> = ({
     } catch {
       // CSS.escape fallback if path contains unusual characters
     }
-  }, [focusedPath]);
+    // 子项异步加载或分页追加后，焦点节点位置会变化，需要重新滚动
+  }, [focusedPath, rootNode, expandedFolders]);
 
   // Close context menu on any outside click or escape
   useEffect(() => {
@@ -175,6 +177,10 @@ export const FileTree: React.FC<FileTreeProps> = ({
     if (visibleNodes.length === 0) return;
 
     const currentIndex = visibleNodes.findIndex((n) => n.path === focusedPath);
+    const currentNode = visibleNodes.find((n) => n.path === focusedPath);
+    // 根目录恒为展开态，不参与折叠，也不在 expandedFolders 里
+    const isCurrentExpanded =
+      !!currentNode && (currentNode.path === '' || expandedFolders.has(currentNode.path));
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -188,47 +194,23 @@ export const FileTree: React.FC<FileTreeProps> = ({
       const prevIndex =
         currentIndex < 0 ? 0 : Math.max(0, currentIndex - 1);
       setFocusedPath(visibleNodes[prevIndex].path);
-    } else if (e.key === ' ') {
-      // Space key: Expand/Collapse on directory, Select/Deselect on file
+    } else if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
-      const currentNode = visibleNodes.find((n) => n.path === focusedPath);
-      if (currentNode) {
-        if (currentNode.type === 'directory') {
-          if (!currentNode.isIgnored && !currentNode.isExcluded) {
-            onToggleExpandFolder(currentNode.path);
-          }
-        } else {
-          if (
-            !currentNode.isIgnored &&
-            !currentNode.isExcluded &&
-            isFileAllowed(currentNode.name, currentNode.path, settings)
-          ) {
-            onToggleFile(currentNode.path);
-          }
+      if (!currentNode) return;
+      if (currentNode.type === 'directory') {
+        if (currentNode.path !== '' && !currentNode.isIgnored && !currentNode.isExcluded) {
+          onToggleExpandFolder(currentNode.path);
         }
-      }
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const currentNode = visibleNodes.find((n) => n.path === focusedPath);
-      if (currentNode) {
-        if (currentNode.type === 'directory') {
-          if (!currentNode.isIgnored && !currentNode.isExcluded) {
-            onToggleExpandFolder(currentNode.path);
-          }
-        } else {
-          if (
-            !currentNode.isIgnored &&
-            !currentNode.isExcluded &&
-            isFileAllowed(currentNode.name, currentNode.path, settings)
-          ) {
-            onToggleFile(currentNode.path);
-          }
-        }
+      } else if (
+        !currentNode.isIgnored &&
+        !currentNode.isExcluded &&
+        isFileAllowed(currentNode.name, currentNode.path, settings)
+      ) {
+        onToggleFile(currentNode.path);
       }
     } else if (e.key === 'ArrowRight') {
-      const currentNode = visibleNodes.find((n) => n.path === focusedPath);
       if (currentNode && currentNode.type === 'directory') {
-        if (!expandedFolders.has(currentNode.path)) {
+        if (!isCurrentExpanded && !currentNode.isIgnored && !currentNode.isExcluded) {
           e.preventDefault();
           onToggleExpandFolder(currentNode.path);
         } else if (currentNode.children && currentNode.children.length > 0) {
@@ -237,21 +219,15 @@ export const FileTree: React.FC<FileTreeProps> = ({
         }
       }
     } else if (e.key === 'ArrowLeft') {
-      const currentNode = visibleNodes.find((n) => n.path === focusedPath);
-      if (currentNode) {
-        if (currentNode.type === 'directory' && expandedFolders.has(currentNode.path)) {
-          e.preventDefault();
-          onToggleExpandFolder(currentNode.path);
-        } else {
-          // Jump to parent directory
-          const pathSegments = currentNode.path.split('/');
-          if (pathSegments.length > 1) {
-            pathSegments.pop();
-            const parentPath = pathSegments.join('/');
-            e.preventDefault();
-            setFocusedPath(parentPath);
-          }
-        }
+      if (!currentNode || currentNode.path === '') return;
+      if (currentNode.type === 'directory' && isCurrentExpanded) {
+        e.preventDefault();
+        onToggleExpandFolder(currentNode.path);
+      } else {
+        // 回到父目录；顶层节点的父目录就是根（空串）
+        const separatorIndex = currentNode.path.lastIndexOf('/');
+        e.preventDefault();
+        setFocusedPath(separatorIndex === -1 ? '' : currentNode.path.slice(0, separatorIndex));
       }
     }
   };

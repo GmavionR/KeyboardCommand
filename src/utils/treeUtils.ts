@@ -1,4 +1,4 @@
-import { FileNode, SettingsConfig, SearchResultItem } from '../types';
+import { FileNode, SettingsConfig } from '../types';
 
 export function normalizeFolderPath(path: string): string {
   return path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
@@ -100,58 +100,6 @@ export function getNodeTriState(
   if (hasUnloadedEligibleCandidates(node)) return 'indeterminate';
   if (selectedCount === allFiles.length) return 'checked';
   return 'indeterminate';
-}
-
-export function searchNodes(
-  root: FileNode,
-  query: string,
-  settings: SettingsConfig,
-  selectedPaths: Set<string>
-): SearchResultItem[] {
-  if (!query.trim()) return [];
-  const normalized = query.toLowerCase().trim();
-  const results: SearchResultItem[] = [];
-
-  function traverse(node: FileNode) {
-    if (node.isIgnored) return;
-
-    if (node.path) {
-      const nodePathLower = node.path.toLowerCase();
-      const nodeNameLower = node.name.toLowerCase();
-      if (nodePathLower.includes(normalized) || nodeNameLower.includes(normalized)) {
-        if (node.type === 'file') {
-          if (isFileAllowed(node.name, node.path, settings)) {
-            results.push({
-              id: node.id,
-              name: node.name,
-              relativePath: node.path,
-              type: 'file',
-              isSelected: selectedPaths.has(node.path),
-            });
-          }
-        } else if (node.type === 'directory') {
-          results.push({
-            id: node.id,
-            name: node.name,
-            relativePath: node.path,
-            type: 'directory',
-          });
-        }
-      }
-    }
-
-    if (node.children) {
-      for (const child of node.children) {
-        traverse(child);
-      }
-    }
-  }
-
-  traverse(root);
-
-  // Sort ascending by full path
-  results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-  return results;
 }
 
 export function findNodeByPath(root: FileNode, targetPath: string): FileNode | null {

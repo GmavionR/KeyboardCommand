@@ -25,12 +25,19 @@ export interface SelectableFilesResult {
   directoryCounts: { path: string; count: number }[];
 }
 
-export interface SearchResultItem {
-  id: string;
+// 与 src-tauri/src/search.rs 的 SearchOutcome 同形；结果由用户安装的 fd 产生
+export interface SearchMatch {
   name: string;
   relativePath: string;
   type: 'file' | 'directory';
-  isSelected?: boolean;
+  size?: number;
+}
+
+export interface SearchOutcome {
+  results: SearchMatch[];
+  hasMore: boolean;
+  incomplete: boolean;
+  warning: string | null;
 }
 
 // 与 src-tauri/src/history_store.rs 的落盘元数据同形；快照正文按需懒加载，不常驻内存
