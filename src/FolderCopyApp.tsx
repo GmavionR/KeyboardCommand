@@ -63,6 +63,10 @@ function formatHistoryTime(createdAt: number): string {
   return new Date(createdAt).toLocaleString('zh-CN');
 }
 
+// 低于 Tailwind lg（1024px）时右侧 1/3 栏不足 330px，选择清单与历史卡片开始挤压，
+// 按设计基准降级为单面板（issue 55）
+const WIDE_VIEWPORT_QUERY = '(min-width: 1024px)';
+
 function asPackageError(error: unknown): ContextPackageError | null {
   if (
     typeof error === 'object' &&
@@ -133,12 +137,28 @@ export default function App() {
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
 
   // Layout & Auxiliary Panel State (issue 32 resolution)
-  // Default design canvas: 1280x800 standard 2/3 : 1/3 split, or narrow window single panel
-  const [viewportMode, setViewportMode] = useState<'standard' | 'narrow'>('standard');
+  // 窗口宽度决定标准双栏还是窄窗口单面板（issue 55）；评测条可临时覆盖，跨越断点即回到自动
+  const [isWideViewport, setIsWideViewport] = useState(
+    () => window.matchMedia(WIDE_VIEWPORT_QUERY).matches
+  );
+  const [viewportOverride, setViewportOverride] = useState<'standard' | 'narrow' | null>(null);
+  const viewportMode = viewportOverride ?? (isWideViewport ? 'standard' : 'narrow');
   // Initial entry defaults to "当前选择"
   const [auxiliaryView, setAuxiliaryView] = useState<AuxiliaryView>('selection');
   // In narrow mode: single-panel tabs between tree, selection, history
   const [narrowActiveTab, setNarrowActiveTab] = useState<'tree' | 'selection' | 'history'>('tree');
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(WIDE_VIEWPORT_QUERY);
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsWideViewport(event.matches);
+      setViewportOverride(null);
+    };
+
+    setIsWideViewport(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   // History State（落盘见 issue 48；列表由 list_history 读出）
   const [historyList, setHistoryList] = useState<CopyHistoryItem[]>([]);
@@ -1034,7 +1054,8 @@ export default function App() {
         showHelp={isHelpOpen}
         onToggleHelp={() => setIsHelpOpen(!isHelpOpen)}
         viewportMode={viewportMode}
-        onToggleViewportMode={setViewportMode}
+        onSelectViewportMode={setViewportOverride}
+        isViewportAutomatic={viewportOverride === null}
       />
 
       {/* 3. Top Utility Bar: Navigation Bar & Combobox (地址输入框在左，选择文件夹、重新载入、规则设置在输入框右侧) */}

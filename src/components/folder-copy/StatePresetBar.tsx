@@ -33,7 +33,8 @@ interface StatePresetBarProps {
   showHelp: boolean;
   onToggleHelp: () => void;
   viewportMode: 'standard' | 'narrow';
-  onToggleViewportMode: (mode: 'standard' | 'narrow') => void;
+  onSelectViewportMode: (mode: 'standard' | 'narrow' | null) => void;
+  isViewportAutomatic: boolean;
 }
 
 export const StatePresetBar: React.FC<StatePresetBarProps> = ({
@@ -42,7 +43,8 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
   showHelp,
   onToggleHelp,
   viewportMode,
-  onToggleViewportMode,
+  onSelectViewportMode,
+  isViewportAutomatic,
 }) => {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
 
@@ -130,15 +132,16 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
             <span>{currentPresetItem.label}</span>
           </span>
           <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
-            · {viewportMode === 'standard' ? '1280×800 标准分栏 (2/3 : 1/3)' : '窄窗口单面板'}
+            · {viewportMode === 'standard' ? '标准分栏 (2/3 : 1/3)' : '窄窗口单面板'}
+            {isViewportAutomatic ? '（按窗宽自动）' : '（手动覆盖）'}
           </span>
         </div>
 
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => onToggleViewportMode(viewportMode === 'standard' ? 'narrow' : 'standard')}
+            onClick={() => onSelectViewportMode(viewportMode === 'standard' ? 'narrow' : 'standard')}
             className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title="切换 1280x800 双栏 / 窄窗口单面板"
+            title="临时覆盖布局；窗口宽度跨越 1024px 断点后回到自动判定"
           >
             {viewportMode === 'standard' ? '切换窄窗口' : '切换标准双栏'}
           </button>
@@ -162,32 +165,45 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
           <span className="text-slate-800 dark:text-slate-200">交互状态验证:</span>
         </div>
 
-        {/* Viewport Layout Mode Switcher (1280x800 vs Narrow Window) */}
+        {/* Viewport Layout Mode Switcher：默认按窗宽自动，后两个按钮为临时覆盖 */}
         <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-md p-0.5 text-[11px] shadow-2xs">
           <button
-            onClick={() => onToggleViewportMode('standard')}
+            onClick={() => onSelectViewportMode(null)}
             className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-all cursor-pointer ${
-              viewportMode === 'standard'
+              isViewportAutomatic
                 ? 'bg-blue-600 text-white font-medium shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
-            title="基准模式：左右分栏 (文件树占 2/3，辅助面板占 1/3)"
+            title="按窗口宽度自动选择：≥1024px 双栏，<1024px 单面板"
           >
             <Monitor className="w-3.5 h-3.5" />
-            <span>1280×800 标准左右分栏 (2/3 : 1/3)</span>
+            <span>自动（按窗宽）</span>
           </button>
 
           <button
-            onClick={() => onToggleViewportMode('narrow')}
+            onClick={() => onSelectViewportMode('standard')}
             className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-all cursor-pointer ${
-              viewportMode === 'narrow'
+              !isViewportAutomatic && viewportMode === 'standard'
                 ? 'bg-blue-600 text-white font-medium shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
-            title="窄窗口自适应模式：单面板切换 (文件树 / 当前选择 / 复制历史)"
+            title="强制左右分栏 (文件树占 2/3，辅助面板占 1/3)，跨越断点后回到自动"
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            <span>强制标准左右分栏 (2/3 : 1/3)</span>
+          </button>
+
+          <button
+            onClick={() => onSelectViewportMode('narrow')}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded transition-all cursor-pointer ${
+              !isViewportAutomatic && viewportMode === 'narrow'
+                ? 'bg-blue-600 text-white font-medium shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+            title="强制单面板切换 (文件树 / 当前选择 / 复制历史)，跨越断点后回到自动"
           >
             <Smartphone className="w-3.5 h-3.5" />
-            <span>窄窗口单面板切换</span>
+            <span>强制窄窗口单面板</span>
           </button>
         </div>
       </div>

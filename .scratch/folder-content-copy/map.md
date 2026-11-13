@@ -64,6 +64,7 @@ Status: resolved
 - [确定 WebView 右键菜单的弹出与开关规则](issues/44-system-settings-and-desktop-integrations.md)：开发构建默认允许浏览器右键菜单，发布版默认屏蔽并提供系统设置开关；选择持久化到 localStorage，输入框内的原生粘贴与文件树自定义菜单不受影响。起因是验收 issue 42 时右键忽略目录漏出了 WebView2 默认菜单。
 - [确定双击文件节点用系统默认程序打开的手势取舍](issues/50-open-file-in-default-app.md)：复用 Opener 插件 `openPath`，不新增 Rust 命令；因本树行单击是“切换勾选”而非资源管理器式幂等选中，文件行勾选延后 250 毫秒、期间收到双击即取消，使双击只打开不改勾选，勾选框/空格/Enter 保持即时。
 - [系统设置只呈现真实状态，未接入的能力不给开关](issues/44-system-settings-and-desktop-integrations.md)：用户选定「只做诚实化，零新依赖」——版本取 `getVersion()`/`getTauriVersion()`，连接状态真读 `PRAGMA journal_mode`，路径/占用/历史条数来自新增 Rust 命令 `storage_stats`（含 WAL/SHM，条数上限由后端下发）；更新检查改为禁用的「不可用」态并说明未配置端点；自启与通知两个空开关删除、转 [issue 54](issues/54-autostart-notification-and-global-hotkey.md)；快捷键分组改名「应用内快捷键与界面行为」并注明仅窗口聚焦时生效。首版不留任何勾选后不生效的假控制。
+- [窄窗口自动降级为单面板标签切换](issues/55-narrow-viewport-auto-switch.md)：以 `matchMedia('(min-width: 1024px)')`（Tailwind `lg`）驱动布局，低于断点自动切单面板；评测条可强制覆盖，点「自动」或窗宽跨越断点即清除覆盖。单面板三 Tab 与吸底 CTA 沿用既有实现，未加窗口最小尺寸限制。
 
 ## 已完成调研（不代表最终选型）
 
@@ -82,7 +83,6 @@ Status: resolved
 以下票据均尚未解决（`Status: open` 或 `Status: claimed`），标题链接可打开详细问题。每次解决或新增票据时同步更新本列表；票据正文是具体问题的唯一事实来源。
 
 - [接入开机自启、桌面通知与系统级全局快捷键](issues/54-autostart-notification-and-global-hotkey.md)：从 issue 44 拆出的原生能力接入，需先定插件选型、托盘语义与热键冲突反馈。
-- [窄窗口自动降级为单面板标签切换](issues/55-narrow-viewport-auto-switch.md)：单面板与吸底 CTA 已实现，但只有开发预设按钮能触发；缺自动断点，阈值与手动切换的优先级待定。
 
 ## 范围外
 
