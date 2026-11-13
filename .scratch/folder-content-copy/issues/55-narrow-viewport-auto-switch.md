@@ -21,8 +21,8 @@ Label: ready-for-agent
 
 - **断点取 1024px**，即 Tailwind 的 `lg`。低于它时右侧 1/3 栏不足 330px（内容区宽 = 窗宽 − 36，右栏取其 1/3），选择清单的行内按钮与历史卡片开始挤压。用业界既有断点而不是自造魔数。
 - **用 `matchMedia('(min-width: 1024px)')` 驱动**，沿用 `ThemeContext` 跟随系统明暗的同一写法（`addEventListener('change')` + 卸载时移除），不引入 `ResizeObserver`、不新增依赖、不逐像素 setState。
-- **布局改为派生值**：`viewportMode = viewportOverride ?? (isWideViewport ? 'standard' : 'narrow')`。`isWideViewport` 由媒体查询维护，`viewportOverride` 默认 `null`。
-- **手动覆盖仍可逆**：评测条从两个按钮改为三个——「自动（按窗宽）」「强制标准左右分栏」「强制窄窗口单面板」。点强制即写覆盖，点自动即清空；此外**窗口宽度跨越断点时也自动清除覆盖**，避免开发者点过一次就把自适应永久锁死。折叠态的提示文字同步显示「（按窗宽自动）」或「（手动覆盖）」。
+- **布局改为派生值**：`viewportMode = viewportOverride ?? (isWideViewport ? 'standard' : 'narrow')`。`isWideViewport` 由媒体查询维护，`viewportOverride` 默认 `null`。（`viewportOverride` 已随 [issue 56](56-remove-state-preset-bar.md) 删除，现在是纯派生 `isWideViewport ? 'standard' : 'narrow'`。）
+- **手动覆盖仍可逆**：评测条从两个按钮改为三个——「自动（按窗宽）」「强制标准左右分栏」「强制窄窗口单面板」。点强制即写覆盖，点自动即清空；此外**窗口宽度跨越断点时也自动清除覆盖**，避免开发者点过一次就把自适应永久锁死。折叠态的提示文字同步显示「（按窗宽自动）」或「（手动覆盖）」。（整条评测条已随 issue 56 删除，本条只保留作历史记录。）
 - 回调类型从 `(mode: 'standard' | 'narrow') => void` 改为 `(mode: 'standard' | 'narrow' | null) => void`， prop 更名 `onToggleViewportMode` → `onSelectViewportMode`（三个选项不再是 toggle）。
 - **未加 `minWidth` / `minHeight`**：实测 480px 宽仍无横向溢出、CTA 可见，没有必须限制最小尺寸的证据，不顺手加约束。若后续在更窄尺寸下发现不可用，再单独提。
 
@@ -48,9 +48,10 @@ Label: ready-for-agent
 
 - 拖动窗口边框由宽变窄，跨过 1024px 时自动变单面板；拖回宽处自动恢复双栏。
 - 窄窗口下三个 Tab 切换正常，底部复制按钮始终可点。
-- 评测条点「强制…」后布局立即改变，再点「自动（按窗宽）」立即回到按窗宽判定。
+- 评测条点「强制…」后布局立即改变，再点「自动（按窗宽）」立即回到按窗宽判定。（该条已随 issue 56 删除，此项不再需要验收。）
 
 ## Comments
 
 - 2026-11-13：在分析 issue 44 时顺带核查发现的真实缺口，与系统设置无关，因此不并入 44，单独成票；同日实现并验证完成。
 - 设计文档只给了 1280×800 标准基准，没写切换阈值，1024px 是实现时按右栏最小可用宽度选定并记入本票据的。
+- 2026-11-13：[issue 56](56-remove-state-preset-bar.md) 删除整条评测条后，本票的手动覆盖设计随之作废，自动断点判定原样保留并已重新回归（1024 双栏 / 1023 单面板）。

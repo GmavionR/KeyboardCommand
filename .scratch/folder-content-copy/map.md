@@ -54,7 +54,7 @@ Status: resolved
 - [每条历史记录使用两个配对文件](issues/20-history-file-layout.md)：`.meta.json` 保存元数据，`.md` 只保存原样文件上下文包正文；元数据文件作为记录发布标记。
 - [确定历史快照的落盘位置、读写归属与失败语义](issues/48-history-snapshot-storage.md)：历史落在与设置数据库同根的 `history\` 子目录，由自定义 Rust 命令读写，单文件临时文件加原子重命名，记录标识为毫秒时间戳加随机后缀；启动只读元数据、正文懒加载，写盘失败时复制仍成功但该条不入列表，目录不可读时历史按空处理且不阻塞浏览。
 - [持久化最近文件夹并与复制历史面板联动](issues/49-recent-folder-list.md)：成功加载的文件夹写入设置数据库单表 `recent_folder`，只存路径、最多 10 条写死不可配置、按最后使用时间倒序并淘汰最旧；加载失败不写入，从下拉选中死路径时提示中文错误并移除该条；首版不提供清空和单条删除；切换文件夹后历史面板强制回到「当前目录」筛选；目录比较统一用归一化路径（小写、正斜杠、去尾斜杠），显示保留原始写法。
-- [复制历史落盘并由 Rust 管理](issues/43-history-storage-and-workflows.md)：历史列表是磁盘投影，前端每次写入后重读，正文懒加载，`CopyHistoryItem` 与元数据同形（`createdAt` 毫秒 + `bodyFileName`，不再有内存快照）；写盘失败只提示一条且不入列表；恢复上次选择复用包生成的规则判定过滤失效项；状态预设「8. 无历史记录」只影响显示，不得删除真实记录。
+- [复制历史落盘并由 Rust 管理](issues/43-history-storage-and-workflows.md)：历史列表是磁盘投影，前端每次写入后重读，正文懒加载，`CopyHistoryItem` 与元数据同形（`createdAt` 毫秒 + `bodyFileName`，不再有内存快照）；写盘失败只提示一条且不入列表；恢复上次选择复用包生成的规则判定过滤失效项；状态预设「8. 无历史记录」只影响显示，不得删除真实记录（该预设条已随 [issue 56](issues/56-remove-state-preset-bar.md) 删除）。
 - [定义文件和文件夹的实时搜索体验](issues/22-live-search-experience.md)：按文件或文件夹**自身名称**进行大小写不敏感的纯文本包含匹配（父目录命中不算，见 [issue 53](issues/53-name-only-search.md)），停止输入 500 毫秒后查询；最多显示 10 个通过规则筛选的结果；Enter 对文件切换选择、对文件夹仅定位，并在树中展开和加载到目标节点。
 - [定义 fd 搜索不可用及遍历异常时的行为](issues/26-fd-search-availability-and-errors.md)：使用用户自行安装的 fd；不可用时禁用搜索并提示安装，遍历部分失败时展示已有结果并提示搜索不完整。
 - [确定忽略目录的默认规则](issues/27-ignored-directory-defaults.md)：设置全局共用，按目录名应用于任意层级；预置版本控制、依赖、构建输出、测试和缓存目录，允许逐项编辑并恢复默认值。
@@ -64,7 +64,8 @@ Status: resolved
 - [确定 WebView 右键菜单的弹出与开关规则](issues/44-system-settings-and-desktop-integrations.md)：开发构建默认允许浏览器右键菜单，发布版默认屏蔽并提供系统设置开关；选择持久化到 localStorage，输入框内的原生粘贴与文件树自定义菜单不受影响。起因是验收 issue 42 时右键忽略目录漏出了 WebView2 默认菜单。
 - [确定双击文件节点用系统默认程序打开的手势取舍](issues/50-open-file-in-default-app.md)：复用 Opener 插件 `openPath`，不新增 Rust 命令；因本树行单击是“切换勾选”而非资源管理器式幂等选中，文件行勾选延后 250 毫秒、期间收到双击即取消，使双击只打开不改勾选，勾选框/空格/Enter 保持即时。
 - [系统设置只呈现真实状态，未接入的能力不给开关](issues/44-system-settings-and-desktop-integrations.md)：用户选定「只做诚实化，零新依赖」——版本取 `getVersion()`/`getTauriVersion()`，连接状态真读 `PRAGMA journal_mode`，路径/占用/历史条数来自新增 Rust 命令 `storage_stats`（含 WAL/SHM，条数上限由后端下发）；更新检查改为禁用的「不可用」态并说明未配置端点；自启与通知两个空开关删除、转 [issue 54](issues/54-autostart-notification-and-global-hotkey.md)；快捷键分组改名「应用内快捷键与界面行为」并注明仅窗口聚焦时生效。首版不留任何勾选后不生效的假控制。
-- [窄窗口自动降级为单面板标签切换](issues/55-narrow-viewport-auto-switch.md)：以 `matchMedia('(min-width: 1024px)')`（Tailwind `lg`）驱动布局，低于断点自动切单面板；评测条可强制覆盖，点「自动」或窗宽跨越断点即清除覆盖。单面板三 Tab 与吸底 CTA 沿用既有实现，未加窗口最小尺寸限制。
+- [窄窗口自动降级为单面板标签切换](issues/55-narrow-viewport-auto-switch.md)：以 `matchMedia('(min-width: 1024px)')`（Tailwind `lg`）驱动布局，低于断点自动切单面板；单面板三 Tab 与吸底 CTA 沿用既有实现，未加窗口最小尺寸限制。（当时保留的评测条强制覆盖已随 issue 56 删除，布局现在完全由窗宽决定。）
+- [首版收尾删除交互状态验证条](issues/56-remove-state-preset-bar.md)：删除 `StatePresetBar` 与只由它进入的 `HelpModal`（布局决议说明），连带清掉 11 个状态预设、布局强制覆盖和搜索框的 `presetQuery` 注入；界面状态一律由真实数据驱动，验收场景改在真实环境构造。
 
 ## 已完成调研（不代表最终选型）
 

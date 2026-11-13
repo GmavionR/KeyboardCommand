@@ -8,5 +8,3 @@ export * from './CopyActionBar';
 export * from './SettingsModal';
 export * from './FailureDialog';
 export * from './PackagePreviewModal';
-export * from './HelpModal';
-export * from './StatePresetBar';

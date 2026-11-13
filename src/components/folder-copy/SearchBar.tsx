@@ -30,7 +30,6 @@ interface SearchBarProps {
   onRecheckFd: () => void;
   onToggleFileSelect: (path: string, size?: number) => void;
   onLocateNodeInTree: (path: string, isFolder: boolean) => void;
-  presetQuery?: string;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({
@@ -41,7 +40,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   onRecheckFd,
   onToggleFileSelect,
   onLocateNodeInTree,
-  presetQuery,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -107,11 +105,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     window.addEventListener('keydown', handleGlobalSearchKey);
     return () => window.removeEventListener('keydown', handleGlobalSearchKey);
   }, []);
-
-  // 状态预设只填入查询词，真实搜索仍走 500ms 防抖
-  useEffect(() => {
-    if (presetQuery !== undefined) setInputValue(presetQuery);
-  }, [presetQuery]);
 
   useEffect(() => {
     const query = inputValue.trim();

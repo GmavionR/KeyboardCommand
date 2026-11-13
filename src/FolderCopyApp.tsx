@@ -31,7 +31,6 @@ import {
 } from './utils/treeUtils';
 import { TitleBar } from './components/common/TitleBar';
 import { SystemSettingsModal } from './components/common/SystemSettingsModal';
-import { StatePresetBar, DesignStatePreset } from './components/folder-copy/StatePresetBar';
 import { TopToolbar } from './components/folder-copy/TopToolbar';
 import { SearchBar } from './components/folder-copy/SearchBar';
 import { FileTree } from './components/folder-copy/FileTree';
@@ -42,7 +41,6 @@ import { CopyActionBar } from './components/folder-copy/CopyActionBar';
 import { SettingsModal } from './components/folder-copy/SettingsModal';
 import { FailureDialog } from './components/folder-copy/FailureDialog';
 import { PackagePreviewModal } from './components/folder-copy/PackagePreviewModal';
-import { HelpModal } from './components/folder-copy/HelpModal';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -137,12 +135,11 @@ export default function App() {
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
 
   // Layout & Auxiliary Panel State (issue 32 resolution)
-  // 窗口宽度决定标准双栏还是窄窗口单面板（issue 55）；评测条可临时覆盖，跨越断点即回到自动
+  // 窗口宽度决定标准双栏还是窄窗口单面板（issue 55）
   const [isWideViewport, setIsWideViewport] = useState(
     () => window.matchMedia(WIDE_VIEWPORT_QUERY).matches
   );
-  const [viewportOverride, setViewportOverride] = useState<'standard' | 'narrow' | null>(null);
-  const viewportMode = viewportOverride ?? (isWideViewport ? 'standard' : 'narrow');
+  const viewportMode = isWideViewport ? 'standard' : 'narrow';
   // Initial entry defaults to "当前选择"
   const [auxiliaryView, setAuxiliaryView] = useState<AuxiliaryView>('selection');
   // In narrow mode: single-panel tabs between tree, selection, history
@@ -150,10 +147,7 @@ export default function App() {
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(WIDE_VIEWPORT_QUERY);
-    const handleChange = (event: MediaQueryListEvent) => {
-      setIsWideViewport(event.matches);
-      setViewportOverride(null);
-    };
+    const handleChange = (event: MediaQueryListEvent) => setIsWideViewport(event.matches);
 
     setIsWideViewport(mediaQuery.matches);
     mediaQuery.addEventListener('change', handleChange);
@@ -162,9 +156,6 @@ export default function App() {
 
   // History State（落盘见 issue 48；列表由 list_history 读出）
   const [historyList, setHistoryList] = useState<CopyHistoryItem[]>([]);
-  // 状态预设只演示无历史时的空界面，不得伪造或删除真实历史
-  const [presetEmptyHistory, setPresetEmptyHistory] = useState(false);
-  const visibleHistoryList = presetEmptyHistory ? [] : historyList;
 
   // Modals & Dialogs
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Page rules settings (whitelist, exclusions, etc.)
@@ -173,14 +164,10 @@ export default function App() {
   const [failureList, setFailureList] = useState<CopyFailureDetail[]>([]);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewMarkdown, setPreviewMarkdown] = useState('');
-  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
 
-  // Design State Presets & Overrides for UI evaluation
-  const [currentPreset, setCurrentPreset] = useState<DesignStatePreset>('normal');
-  // fd 可用性来自真实检测，不再由状态预设伪造
+  // fd 可用性来自真实检测
   const [isFdAvailable, setIsFdAvailable] = useState(true);
-  const [presetSearchQuery, setPresetSearchQuery] = useState<string | undefined>(undefined);
 
   // Toast feedback
   const [toast, setToast] = useState<{
@@ -396,98 +383,6 @@ export default function App() {
   const handleOpenSettings = () => {
     setIsSettingsOpen(true);
     void handleLoadSettings();
-  };
-
-  // Preset switching logic
-  const handleSelectPreset = (preset: DesignStatePreset) => {
-    setCurrentPreset(preset);
-    setPresetEmptyHistory(preset === 'empty_history');
-    setIsFailureDialogOpen(false);
-    setIsSettingsOpen(false);
-    setIsPreviewOpen(false);
-
-    switch (preset) {
-      case 'normal':
-        setPresetSearchQuery('');
-        setSelectedPaths(new Set());
-        setSelectedSizes(new Map());
-        setSelectableCounts(new Map());
-        setExpandedFolders(new Set());
-        setAuxiliaryView('selection');
-        setNarrowActiveTab('tree');
-        break;
-
-      case 'search_over10':
-        setPresetSearchQuery('icon');
-        break;
-
-      case 'search_empty':
-        setPresetSearchQuery('non_existent_xyz_file');
-        break;
-
-      case 'empty_selection':
-        setSelectedPaths(new Set());
-        setSelectedSizes(new Map());
-        setSelectableCounts(new Map());
-        setAuxiliaryView('selection');
-        if (viewportMode === 'narrow') setNarrowActiveTab('selection');
-        showToast('info', '已切换到空选择态', '复制文件上下文包按钮已根据规范禁用');
-        break;
-
-      case 'empty_folder':
-        setSelectedPaths(new Set());
-        setSelectedSizes(new Map());
-        setSelectableCounts(new Map());
-        if (viewportMode === 'narrow') setNarrowActiveTab('tree');
-        showToast('info', '已清空当前选择', '目录内容仍来自当前真实文件夹');
-        break;
-
-      case 'empty_history':
-        setAuxiliaryView('history');
-        if (viewportMode === 'narrow') setNarrowActiveTab('history');
-        showToast('info', '已切换到无历史记录状态', '仅演示空状态，真实历史记录未被改动');
-        break;
-
-      case 'large_dir':
-        setExpandedFolders(new Set());
-        if (viewportMode === 'narrow') setNarrowActiveTab('tree');
-        showToast('info', '大目录分页使用真实目录数据', '选择包含超过 50 个直接子项的目录进行验收');
-        break;
-
-      case 'copy_failure_dialog':
-        setFailureList([
-          {
-            filePath: `${currentPath}\\src\\core\\scanner.ts`,
-            reason: '文件正被另一后台进程独占访问 (EBUSY: resource busy or locked)',
-            code: 'EBUSY',
-            detail: '状态预设演示数据：真实复制失败时此处显示 Rust 返回的底层错误。',
-          },
-          {
-            filePath: `${currentPath}\\src\\core\\sqlite-storage.ts`,
-            reason: '当前系统用户缺少对该文件的读取权限 (EACCES: permission denied)',
-            code: 'EACCES',
-            detail: '状态预设演示数据：真实复制失败时此处显示 Rust 返回的底层错误。',
-          },
-        ]);
-        setIsFailureDialogOpen(true);
-        break;
-
-      case 'history_partial_fail':
-        if (historyList.length === 0) {
-          showToast('error', '暂无历史记录可重读', '请先复制一次文件上下文包');
-          break;
-        }
-        void handleReReadFile(historyList[0]);
-        break;
-
-      case 'settings_open':
-        handleOpenSettings();
-        break;
-
-      case 'copy_single_file':
-        showToast('info', '请从当前真实文件树选择文件', '该状态预设不会加载模拟目录');
-        break;
-    }
   };
 
   // Keyboard shortcut listener for Ctrl+Shift+C
@@ -1047,18 +942,7 @@ export default function App() {
       {/* 1. Windows Native Title Bar: Native window title + Global System Settings button beside Minimize */}
       <TitleBar onOpenSettings={() => setIsSystemSettingsOpen(true)} />
 
-      {/* 2. Interactive Design State & Viewport Switcher */}
-      <StatePresetBar
-        currentPreset={currentPreset}
-        onSelectPreset={handleSelectPreset}
-        showHelp={isHelpOpen}
-        onToggleHelp={() => setIsHelpOpen(!isHelpOpen)}
-        viewportMode={viewportMode}
-        onSelectViewportMode={setViewportOverride}
-        isViewportAutomatic={viewportOverride === null}
-      />
-
-      {/* 3. Top Utility Bar: Navigation Bar & Combobox (地址输入框在左，选择文件夹、重新载入、规则设置在输入框右侧) */}
+      {/* 2. Top Utility Bar: Navigation Bar & Combobox (地址输入框在左，选择文件夹、重新载入、规则设置在输入框右侧) */}
       <TopToolbar
         currentPath={currentPath}
         onChangePath={handleManualChangePath}
@@ -1070,7 +954,7 @@ export default function App() {
         isLoadingFolder={isLoadingFolder}
       />
 
-      {/* 4. Search Area: Single Dedicated Row (搜索输入框单独占一行) */}
+      {/* 3. Search Area: Single Dedicated Row (搜索输入框单独占一行) */}
       <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 transition-colors duration-150">
         <SearchBar
           rootPath={currentPath}
@@ -1080,11 +964,10 @@ export default function App() {
           onLocateNodeInTree={(path, isFolder) => void handleLocateNodeInTree(path, isFolder)}
           isFdAvailable={isFdAvailable}
           onRecheckFd={recheckFd}
-          presetQuery={presetSearchQuery}
         />
       </div>
 
-      {/* 5. Main Work Area: Supports Standard 2/3 : 1/3 Split OR Narrow Single Panel Switch */}
+      {/* 4. Main Work Area: Supports Standard 2/3 : 1/3 Split OR Narrow Single Panel Switch */}
       <div className="flex-1 flex overflow-hidden p-3 gap-3 bg-slate-100 dark:bg-slate-950 transition-colors duration-150">
         {viewportMode === 'standard' ? (
           /* STANDARD 1280x800 BASELINE LAYOUT: 2/3 File Tree + 1/3 Auxiliary Panel */
@@ -1140,7 +1023,7 @@ export default function App() {
                 onClearAll={handleClearAllSelections}
                 onLocateInTree={(p) => handleLocateNodeInTree(p, false)}
                 onPreviewPackage={handlePreviewPackage}
-                historyList={visibleHistoryList}
+                historyList={historyList}
                 currentFolderPath={currentPath}
                 onCopySnapshot={handleCopyHistorySnapshot}
                 onReReadFile={handleReReadFile}
@@ -1260,7 +1143,7 @@ export default function App() {
 
               {narrowActiveTab === 'history' && (
                 <HistoryPanel
-                  historyList={visibleHistoryList}
+                  historyList={historyList}
                   currentFolderPath={currentPath}
                   onCopySnapshot={handleCopyHistorySnapshot}
                   onReReadFile={handleReReadFile}
@@ -1273,14 +1156,14 @@ export default function App() {
         )}
       </div>
 
-      {/* 6. Section 3.4: Fixed Bottom Copy Action Bar */}
+      {/* 5. Section 3.4: Fixed Bottom Copy Action Bar */}
       <CopyActionBar
         selectedCount={selectedPaths.size}
         onExecuteCopy={handleExecuteCopy}
         isCopying={isCopying}
       />
 
-      {/* 7. Page Rules Settings Modal: Whitelist, Exclusions, Ignored Dirs, Positive Integer Threshold */}
+      {/* 6. Page Rules Settings Modal: Whitelist, Exclusions, Ignored Dirs, Positive Integer Threshold */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => {
@@ -1295,13 +1178,13 @@ export default function App() {
         isSqliteSaving={isSettingsSaving}
       />
 
-      {/* 7.1 Global System Settings Modal: Theme, Software Updates, SQLite Status, System Shortcuts */}
+      {/* 6.1 Global System Settings Modal: Theme, Software Updates, SQLite Status, System Shortcuts */}
       <SystemSettingsModal
         isOpen={isSystemSettingsOpen}
         onClose={() => setIsSystemSettingsOpen(false)}
       />
 
-      {/* 8. Copy Failure Dialog: Lists Failed File Paths and Reasons, Retains Selections */}
+      {/* 7. Copy Failure Dialog: Lists Failed File Paths and Reasons, Retains Selections */}
       <FailureDialog
         isOpen={isFailureDialogOpen}
         onClose={() => setIsFailureDialogOpen(false)}
@@ -1333,16 +1216,13 @@ export default function App() {
         }}
       />
 
-      {/* 9. Context Package Preview Modal */}
+      {/* 8. Context Package Preview Modal */}
       <PackagePreviewModal
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
         markdownContent={previewMarkdown}
         fileCount={selectedPaths.size}
       />
-
-      {/* 10. Rules & Specs Reference Modal */}
-      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
       {/* Toast Notification Container */}
       {toast && (

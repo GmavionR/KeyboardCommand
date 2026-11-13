@@ -1,8 +1,8 @@
 # 文件夹浏览与文件上下文包复制规格
 
 Type: spec
-Label: ready-for-agent
-Status: ready-for-agent
+Label: ready-for-human
+Status: ready-for-human
 
 ## 问题陈述
 
@@ -62,8 +62,8 @@ Status: ready-for-agent
 - 最近文件夹最多 10 条，写死不可配置，只保存路径字符串。每次成功加载文件夹（对话框选择、手动输入、下拉选择、刷新走同一加载流程；命令行激活只传 `--route`、不携带文件夹路径，故不构成加载入口）写入或更新设置数据库中的单表记录，按最后使用时间倒序读取；加载失败不写入，从下拉选择死路径失败时提示中文错误并移除该条。首版不提供清空和单条删除入口。详见 [issue 49](issues/49-recent-folder-list.md)。
 - 全局系统设置展示并控制主题模式（system/light/dark）；跟随系统模式实时响应操作系统明暗变化。SQLite 状态、存储路径/占用、应用版本与更新状态、快捷键展示应来自实际应用状态，不得使用固定演示值。系统启动、通知和自动更新开关仅在相应 Rust/系统能力成功接入后呈现为可操作功能。落地口径见 [issue 44](issues/44-system-settings-and-desktop-integrations.md)：版本取运行时 `getVersion()`/`getTauriVersion()`；连接状态由真读 `PRAGMA journal_mode` 得出，连不上就显示错误态，不预设 WAL；数据库与历史目录分别下发真实路径，占用含 `-wal`/`-shm`，历史条数上限由后端常量下发而非前端写死；未配置发行更新端点时更新检查呈现为禁用的不可用态并说明原因，不显示任何模拟成功；快捷键分组名为「应用内快捷键与界面行为」，注明仅在应用窗口获得焦点时生效。开机自启、桌面通知与系统级全局快捷键尚未接入，界面不显示对应开关，接入工作见 [issue 54](issues/54-autostart-notification-and-global-hotkey.md)。
 - WebView 右键菜单策略：开发构建默认允许弹出浏览器菜单便于调试；发布版默认屏蔽浏览器默认菜单（返回、刷新、另存为、打印、检查），并在系统设置「应用内快捷键与界面行为」分组提供「允许 WebView 右键菜单」开关用于发布后排查问题。开关选择持久化到 localStorage（`kbc_allow_browser_menu`），重启后仍生效；用户显式选择过一次后以该选择为准，未选择时按构建模式取默认值。无论开关状态，输入框与文本域内的原生右键粘贴保持可用，文件树自定义右键菜单不受该开关影响。
-- 主工作区布局按窗口宽度自动选择：`matchMedia('(min-width: 1024px)')`（Tailwind `lg`）成立时用标准左右分栏（文件树 2/3、辅助面板 1/3），低于该断点自动降级为单面板标签切换（文件树 / 当前选择 / 复制历史），顶部地址栏与搜索行保留、底部复制操作栏始终吸底。状态预设条可临时强制某一布局，点「自动（按窗宽）」或窗口宽度跨越断点即清除强制、回到自动判定。首版不限制窗口最小尺寸。详见 [issue 55](issues/55-narrow-viewport-auto-switch.md)。
-- 保留 playground 的折叠式状态预设条，供开发和验收人员检查其定义的 13 种界面状态；预设数据只用于状态演示，不得伪造正式文件系统、数据库或历史结果。历史落盘后，“无历史记录”预设只切换为显示空状态，不删除也不改写磁盘上的真实记录。
+- 主工作区布局按窗口宽度自动选择：`matchMedia('(min-width: 1024px)')`（Tailwind `lg`）成立时用标准左右分栏（文件树 2/3、辅助面板 1/3），低于该断点自动降级为单面板标签切换（文件树 / 当前选择 / 复制历史），顶部地址栏与搜索行保留、底部复制操作栏始终吸底。布局完全由窗宽决定，不提供手动强制入口。首版不限制窗口最小尺寸。详见 [issue 55](issues/55-narrow-viewport-auto-switch.md)。
+- 界面不保留任何开发/验收专用的状态切换控件。原「交互状态验证」预设条与「布局决议」说明弹窗随首版收尾一并删除，界面状态一律由真实文件系统、数据库与历史数据驱动；需要检查空态、失败态等场景时直接在真实环境中构造。详见 [issue 56](issues/56-remove-state-preset-bar.md)。
 - 当前代码库无应用源码或既有自动化测试可复用。规格验收以最高可用边界进行：页面通过真实 Tauri 命令完成完整用户流程；每张实现票据结束前，先对照设计基准检视页面与交互，再在已接入 Rust 的应用中手动验收该票据的端到端行为。此检查要求贯穿所有实现票据，不因票据只改 Rust 而省略。**基准来源已变更**：原要求先用 ego-browser 检视 playground 并对照，但仓库内的 `playground/` 已随 issue 46 把页面迁入应用后删除（issue 39、49 各记一次），因此以 [`docs/design/文件夹复制界面绘制说明.md`](../../docs/design/文件夹复制界面绘制说明.md) 和外部演示项目的 `docs/design.md` 为基准，在运行中的应用里检视；后续票据若仍写着 playground 对照，按本条替换并在票据中记明。**2026-11-13 核实修正**：原文「项目父目录均已无该目录」不成立——外部演示项目 `E:\DevProjects\LocalProjects\tauriProjects\KeyboardCommand_Folder_Copy` 仍在，`docs/design.md` 与 `src/` 完整可读（见下方补充说明）。消失的只是仓库内的 `playground/` 副本；外部演示项目仍是有效的设计对照材料，issue 44 即据其第 4.1 节完成对照。
 - 领域实现优先复用成熟平台和 Tauri 官方能力；具体依赖选型和 API 用法在对应实现票据开始前按项目要求调研，不从零复制成熟基础设施。
 
@@ -71,7 +71,7 @@ Status: ready-for-agent
 
 - 只验证用户可观察行为，不把内部函数调用顺序或具体模块结构作为验收条件。
 - 每个端到端场景应覆盖真实 UI 与 Rust 命令边界，包括成功、失败和状态保留；每张实现票据完成前，先对照设计文档检视对应页面/交互（原「用 ego-browser 检查 playground」按上方实现决定中的基准变更条替换），再手动验证接入 Rust 后的流程。
-- 不增加自动化测试框架或测试命令。该决定遵循 issue 30；目前代码库没有既有测试模块或可参考的同类测试。playground 的 StatePresetBar 提供需要手动检查的界面场景参考，不替代真实后端验收。
+- 不增加自动化测试框架或测试命令。该决定遵循 issue 30；目前代码库没有既有测试模块或可参考的同类测试。原 playground 的 StatePresetBar 已随 [issue 56](issues/56-remove-state-preset-bar.md) 删除，需要手动检查的界面场景改由真实环境构造。
 
 ## 范围外
 
@@ -83,9 +83,17 @@ Status: ready-for-agent
 - 最近文件夹的清空、单条删除等管理界面，以及历史快照存储目录的用户自定义。
 - 将 fd、fzf、rg 或 Everything ES 打包为应用依赖；fd 由用户自行安装。
 
+## 首版交付状态
+
+2026-11-13：首版实现票据全部 `resolved`，界面已不含任何演示态或假控制。剩余工作只有用户桌面验收，故本规格状态改为 `ready-for-human`。
+
+- 已交付：应用外壳与单实例激活、真实目录树与大目录分页、规则筛选与忽略目录、fd 实时搜索与树内定位、键盘导航、递归选择与三态、选择清单与相对路径复制、Rust 生成的文件上下文包与预览、剪贴板复制、历史落盘（上限 20 条）与重读/删除、选择恢复、最近文件夹、SQLite 规则设置、系统设置真实状态、窄窗口自动降级。
+- 首版明确不含：开机自启、桌面通知、系统级全局快捷键（[issue 54](issues/54-autostart-notification-and-global-hotkey.md)，唯一未解决票据），以及下方「范围外」列出的各项。
+- 机器验证口径：`cargo test --lib` 27 项通过、`cargo check` 与 `cargo check --release` 通过、`bun run build`（`tsc && vite build`）通过；界面渲染与交互另用 CDP 注入 Tauri IPC 桩在真实浏览器中回归（桩为演示数据，不证明真实文件系统/数据库结果）。真实文件系统、剪贴板、SQLite 与窗口行为的最终验收由用户在桌面应用中执行。
+
 ## 补充说明
 
 - **外部 UI 演示项目：** `E:\DevProjects\LocalProjects\tauriProjects\KeyboardCommand_Folder_Copy`。这是独立于本仓库的功能演示 playground，由外部 UI 设计工具根据“文件夹浏览与复制”功能讨论和已确认的产品需求生成。项目中的 `docs/design.md`（`E:\DevProjects\LocalProjects\tauriProjects\KeyboardCommand_Folder_Copy\docs\design.md`）说明该 UI 演示实现和展示的功能及交互，是本功能 UI/交互对照材料；同项目 `src/` 中的 React 演示代码使用 mock data，仅作 UI/交互参考，不能视作本仓库的正式实现或 Rust 后端实现。
 - 本规格中明确由 design.md 覆盖的旧决定包括 issue 31 的文件上下文包格式、issue 22 的搜索结果 Enter 关闭/切换行为，以及 issue 36 的文件树 Enter/左右方向键行为。尚未被覆盖的已确认文件筛选、历史、设置和应用外壳决定继续有效。
 - 与项目需求背景、架构约束及领域术语的关系见 [`PROJECT_REQUIREMENTS.md`](../../PROJECT_REQUIREMENTS.md)、[`GLOSSARY.md`](../../GLOSSARY.md) 和 [`docs/adr/`](../../docs/adr/)。
-- 实施任务拆分见 [初始化桌面应用并接入现有页面](issues/37-application-shell-and-ui.md) 至 [接入系统设置与桌面能力](issues/44-system-settings-and-desktop-integrations.md)，另有 [持久化最近文件夹并与复制历史面板联动](issues/49-recent-folder-list.md)。
+- 实施任务拆分见 `issues/` 目录：外壳与页面 [issue 37](issues/37-application-shell-and-ui.md) 起，至首版收尾 [issue 56](issues/56-remove-state-preset-bar.md) 止；各票据的落地口径以票据正文为准，总览见 [map.md](map.md)。
