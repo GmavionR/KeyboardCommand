@@ -29,3 +29,4 @@ Label: ready-for-agent
 ## Comments
 
 - 2026-11-13：从 issue 44 拆出。44 已把两个空开关删除、把快捷键分组改名为「应用内快捷键与界面行为」并注明「仅在应用窗口获得焦点时生效」，并在分组末尾留说明：这些能力接入后才会在此处出现开关。本票据落地时需同步移除那段说明。
+- 2026-11-13：命令面板 effort 已确定要用**可配置的系统级全局热键**（默认 `Ctrl + Shift + K`）唤起面板，并且需要托盘作为「无窗口显示」状态的前提，见 [command-palette issue 02](../../command-palette/issues/02-system-hotkey-and-invocation.md)。本票的「系统级全局快捷键」与托盘部分因此与该 effort 重叠，**边界尚未划分**，见 [command-palette issue 14](../../command-palette/issues/14-scope-boundary-with-issue-54.md)。在边界定下来之前，本票不要自行动手做热键注册或托盘，避免两边各做一半。自启与通知部分暂不受影响。
