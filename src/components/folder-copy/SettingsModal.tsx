@@ -332,9 +332,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              面向源码、配置、文档、脚本文本文件。扩展名带点（如{' '}
-              <code className="text-blue-600 dark:text-blue-300 font-mono">.ts</code>），特殊全名不带点（如{' '}
-              <code className="text-blue-600 dark:text-blue-300 font-mono">Dockerfile</code>）。敏感文本文件（如{' '}
+              文件名<strong className="text-slate-700 dark:text-slate-200">包含</strong>规则文本即命中，大小写不敏感，不支持通配符。
+              例如 <code className="text-blue-600 dark:text-blue-300 font-mono">.ts</code> 同时覆盖{' '}
+              <code className="text-blue-600 dark:text-blue-300 font-mono">.tsx</code>，
+              <code className="text-blue-600 dark:text-blue-300 font-mono">.js</code> 同时覆盖{' '}
+              <code className="text-blue-600 dark:text-blue-300 font-mono">.jsx</code>、
+              <code className="text-blue-600 dark:text-blue-300 font-mono">.json</code>。敏感文本文件（如{' '}
               <code className="text-amber-600 dark:text-amber-300 font-mono">.env</code>）无硬编码限制；二进制文件不在默认白名单中。
             </p>
 
@@ -345,7 +348,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 value={newWhitelistItem}
                 onChange={(e) => setNewWhitelistItem(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddWhitelist()}
-                placeholder="添加扩展名或文件名，如 .rs, .vue, Jenkinsfile"
+                placeholder="添加文件名包含的文本，如 .rs, .vue, Jenkinsfile"
                 className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
               />
               <button
@@ -404,9 +407,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              规则全局共用，且在白名单之后二次应用过滤。默认包含锁文件模式及{' '}
-              <code className="text-amber-600 dark:text-amber-300 font-mono">.DS_Store</code>、
-              <code className="text-amber-600 dark:text-amber-300 font-mono">Thumbs.db</code> 等构建噪音文件。
+              同样是「名称包含即命中」，命中后直接否决白名单。默认用{' '}
+              <code className="text-amber-600 dark:text-amber-300 font-mono">.lock</code> 一条覆盖各类锁文件，另含{' '}
+              <code className="text-amber-600 dark:text-amber-300 font-mono">.min.js</code>、
+              <code className="text-amber-600 dark:text-amber-300 font-mono">.map</code>、
+              <code className="text-amber-600 dark:text-amber-300 font-mono">.DS_Store</code> 等噪音文件。规则末尾加{' '}
+              <code className="text-amber-600 dark:text-amber-300 font-mono">/</code> 则只作用于文件夹（如{' '}
+              <code className="text-amber-600 dark:text-amber-300 font-mono">node_modules/</code>）。
             </p>
 
             {/* Add Exclusion Form */}
@@ -416,7 +423,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 value={newExclusionItem}
                 onChange={(e) => setNewExclusionItem(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddExclusion()}
-                placeholder="添加排除规则模式，如 *.lock, *.min.js, *.map"
+                placeholder="添加排除文本，如 .lock, .min.js, dist/"
                 className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
               />
               <button
@@ -475,7 +482,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              按目录名称作用于当前根目录下任意嵌套层级。命中忽略的目录树节点仍展示并标注「已忽略」，但无法展开其后代且不计入选择。
+              与上面两区不同，这里按<strong className="text-slate-700 dark:text-slate-200">目录名完全相同</strong>匹配（大小写不敏感），作用于任意嵌套层级。命中忽略的目录树节点仍展示并标注「已忽略」，但无法展开其后代且不计入选择。
             </p>
 
             {/* Add Ignored Dir Form */}

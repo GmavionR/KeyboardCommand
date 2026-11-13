@@ -1,4 +1,4 @@
-use crate::{directory_block_reason, is_allowed_file, TreeSettings};
+use crate::{directory_block_reason, is_allowed_file, is_directory_rule, rule_text, TreeSettings};
 use serde::Serialize;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -19,15 +19,15 @@ pub(crate) struct SearchMatch {
     pub(crate) size: Option<u64>,
 }
 
-// 查询统一按 `/` 比较；用户可能输入 Windows 反斜杠
+// 查询只与文件/目录自身的名称比较，统一 trim + 转小写
 fn normalize_query(query: &str) -> String {
-    query.trim().to_lowercase().replace('\\', "/")
+    query.trim().to_lowercase()
 }
 
-// fd --full-path 按平台原生分隔符匹配，--path-separator 只改输出不改匹配，
-// 所以预筛参数必须把 `/` 转成原生分隔符，否则跨目录查询恒为空
-fn fd_query_arg(query: &str) -> String {
-    normalize_query(query).replace('/', std::path::MAIN_SEPARATOR_STR)
+// 名称里不含路径分隔符，这类查询必然无结果；fd 还会直接报错退出，
+// 若不提前拦下，stderr 会被当成遍历失败而误报「搜索不完整」。
+fn is_unmatchable_query(query: &str) -> bool {
+    query.is_empty() || query.contains(std::path::is_separator)
 }
 
 fn accept_match(
@@ -40,12 +40,14 @@ fn accept_match(
     if query.is_empty() {
         return false;
     }
-    if !relative_path.to_lowercase().contains(&query) {
-        return false;
-    }
 
     let mut segments = relative_path.split('/');
     let name = segments.next_back().unwrap_or("");
+    // 只匹配自身名称：父目录命中不得把名称不相干的子项带出来
+    if !name.to_lowercase().contains(&query) {
+        return false;
+    }
+
     for ancestor in segments {
         let (ignored, _, excluded, _) = directory_block_reason(ancestor, settings);
         if ignored || excluded {
@@ -121,6 +123,9 @@ pub(crate) struct SearchOutcome {
     has_more: bool,
     incomplete: bool,
     warning: Option<String>,
+    // 仅 debug 构建下发，release 构建恒为 None，前端据此决定是否展示
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
 }
 
 // GUI 进程拉起控制台程序时不要闪出黑窗
@@ -153,14 +158,29 @@ pub(crate) async fn fd_available() -> bool {
     .unwrap_or(false)
 }
 
+// 规则文本按字面量处理，glob 元字符必须转义。实测未转义的 `*a[b]c*/`
+// 会把 `abxc/` 当成字符类匹配一并剪掉，转义后只剪 `a[b]c/`。
+fn escape_glob(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if matches!(ch, '\\' | '?' | '*' | '[' | ']' | '{' | '}') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
 fn fd_search_command(root: &Path, query: &str, settings: &TreeSettings) -> Command {
     let mut command = Command::new("fd");
     hide_console_window(&mut command);
+    // 不用 --unrestricted：保留 fd 原生对 .gitignore 的尊重，只用 --hidden 放开隐藏项，
+    // 让白名单里的 .env.example 之类仍可被搜到。
+    // 不用 --full-path：它会把父目录路径纳入匹配，导致名称不相干的子文件被带出来。
     command.current_dir(root).args([
-        "--unrestricted",
+        "--hidden",
         "--fixed-strings",
         "--ignore-case",
-        "--full-path",
         "--show-errors",
         "--color",
         "never",
@@ -168,20 +188,48 @@ fn fd_search_command(root: &Path, query: &str, settings: &TreeSettings) -> Comma
         "/",
     ]);
 
-    // 只把目录规则交给 fd：--exclude 会连带剪枝同名文件夹，文件规则必须由应用筛选
+    // 目录规则下推给 fd 剪枝，文件规则由 accept_match 后筛选。
+    // fd --exclude 是 glob，尾斜杠只匹配目录路径：`name/` 剪同名目录，
+    // `*text*/` 剪名称含 text 的目录，两者都不会误伤同名文件，因此可以安全下推。
     for name in &settings.ignored_directories {
-        command.arg("--exclude").arg(name);
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        command
+            .arg("--exclude")
+            .arg(format!("{}/", escape_glob(trimmed)));
     }
     for rule in &settings.exclusions {
-        if let Some(directory_rule) = rule.strip_suffix('/') {
-            if !directory_rule.is_empty() {
-                command.arg("--exclude").arg(directory_rule);
-            }
+        if !is_directory_rule(rule) {
+            continue;
         }
+        let text = rule_text(rule);
+        if text.is_empty() {
+            continue;
+        }
+        command
+            .arg("--exclude")
+            .arg(format!("*{}*/", escape_glob(&text)));
     }
 
-    command.arg("--").arg(fd_query_arg(query)).arg(".");
+    command.arg("--").arg(normalize_query(query)).arg(".");
     command
+}
+
+// 仅 debug 构建渲染命令行，供前端开发面板展示；release 构建不编译此函数
+#[cfg(debug_assertions)]
+fn format_command(command: &Command) -> String {
+    let mut parts = vec![command.get_program().to_string_lossy().into_owned()];
+    for arg in command.get_args() {
+        let text = arg.to_string_lossy();
+        if text.is_empty() || text.contains(' ') {
+            parts.push(format!("\"{text}\""));
+        } else {
+            parts.push(text.into_owned());
+        }
+    }
+    parts.join(" ")
 }
 
 fn run_fd_search(
@@ -190,17 +238,22 @@ fn run_fd_search(
     settings: &TreeSettings,
 ) -> Result<SearchOutcome, String> {
     let query = query.trim();
-    if query.is_empty() {
+    if is_unmatchable_query(query) {
         return Ok(SearchOutcome {
             results: Vec::new(),
             has_more: false,
             incomplete: false,
             warning: None,
+            command: None,
         });
     }
 
     let (root, _) = crate::validated_directory(root_path, "", settings)?;
     let mut command = fd_search_command(&root, query, settings);
+    #[cfg(debug_assertions)]
+    let command_line = Some(format_command(&command));
+    #[cfg(not(debug_assertions))]
+    let command_line = None;
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -253,6 +306,7 @@ fn run_fd_search(
         has_more: collected.has_more,
         incomplete: !messages.is_empty(),
         warning,
+        command: command_line,
     })
 }
 
@@ -274,45 +328,73 @@ mod tests {
     fn settings() -> TreeSettings {
         TreeSettings {
             whitelist: vec![".ts".to_string(), ".md".to_string()],
-            exclusions: vec!["*.lock".to_string(), "node_modules/".to_string()],
+            exclusions: vec![".lock".to_string(), "node_modules/".to_string()],
             ignored_directories: vec![".git".to_string()],
             large_dir_threshold: 50,
         }
     }
 
     #[test]
-    fn matches_relative_path_as_case_insensitive_plain_text() {
-        assert!(accept_match(
-            "src/Utils/treeUtils.ts",
-            false,
-            "utils/tree",
-            &settings()
-        ));
-    }
-
-    #[test]
-    fn normalizes_backslash_queries_to_match_slash_relative_paths() {
+    fn matches_own_name_as_case_insensitive_plain_text() {
         assert!(accept_match(
             "src/utils/treeUtils.ts",
             false,
-            "utils\\tree",
+            "TREEUTILS",
             &settings()
         ));
         assert!(accept_match(
             "src/utils/treeUtils.ts",
             false,
-            "UTILS/TREE",
+            "  treeUtils  ",
             &settings()
         ));
     }
 
     #[test]
-    fn fd_query_uses_platform_separator_for_full_path_prefilter() {
-        // fd --full-path 在 Windows 上按原生 \ 匹配，--path-separator 只改输出不改匹配
-        let expected = format!("utils{}tree", std::path::MAIN_SEPARATOR);
-        assert_eq!(fd_query_arg("utils/tree"), expected);
-        assert_eq!(fd_query_arg("utils\\tree"), expected);
-        assert_eq!(fd_query_arg("  Utils/Tree  "), expected);
+    fn rejects_entries_whose_own_name_misses_even_when_parent_path_matches() {
+        // --full-path 的老毛病：父目录叫 components 就把里面所有文件都带出来
+        assert!(!accept_match(
+            "src/components/copier.ts",
+            false,
+            "components",
+            &settings()
+        ));
+        assert!(!accept_match(
+            "src/components/copier.ts",
+            false,
+            "src",
+            &settings()
+        ));
+        assert!(accept_match(
+            "src/components/copier.ts",
+            false,
+            "copier",
+            &settings()
+        ));
+        // 带分隔符的查询不再被当作路径匹配，名称里没有分隔符
+        assert!(!accept_match(
+            "src/components/copier.ts",
+            false,
+            "components/copier",
+            &settings()
+        ));
+        assert!(!accept_match(
+            "src/components/copier.ts",
+            false,
+            "components\\copier",
+            &settings()
+        ));
+    }
+
+    #[test]
+    fn keeps_matching_directories_by_their_own_name() {
+        assert!(accept_match("src/components", true, "components", &settings()));
+        assert!(!accept_match(
+            "src/components/copier.ts",
+            false,
+            "components",
+            &settings()
+        ));
     }
 
     #[test]
@@ -347,8 +429,8 @@ mod tests {
     #[test]
     fn recognizes_directories_and_sorts_results_by_full_path() {
         let lines = vec![
-            "./src/zeta/".to_string(),
-            "./src/alpha.ts".to_string(),
+            "./src/zetas/".to_string(),
+            "./src/notes.md".to_string(),
             "./README.md".to_string(),
             "./src/".to_string(),
         ];
@@ -361,10 +443,114 @@ mod tests {
             .iter()
             .map(|item| item.relative_path.as_str())
             .collect();
-        assert_eq!(paths, vec!["src", "src/alpha.ts", "src/zeta"]);
+        // README.md 只是父目录命中才有的老结果，名称本身没有 s，不该出现
+        assert_eq!(paths, vec!["src", "src/notes.md", "src/zetas"]);
         assert_eq!(collected.matches[0].node_type, "directory");
         assert_eq!(collected.matches[0].name, "src");
         assert_eq!(collected.matches[1].node_type, "file");
         assert_eq!(collected.matches[2].node_type, "directory");
+    }
+
+    fn args_of(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn exclude_values(args: &[String]) -> Vec<String> {
+        args.windows(2)
+            .filter(|pair| pair[0] == "--exclude")
+            .map(|pair| pair[1].clone())
+            .collect()
+    }
+
+    #[test]
+    fn keeps_native_gitignore_filtering_and_only_opens_hidden_entries() {
+        let args = args_of(&fd_search_command(Path::new("."), "main", &settings()));
+        assert!(args.iter().any(|arg| arg == "--hidden"));
+        // --unrestricted 等价于 --no-ignore --hidden，会关掉 gitignore 过滤
+        assert!(!args.iter().any(|arg| arg == "--unrestricted"));
+        assert!(!args.iter().any(|arg| arg == "--no-ignore"));
+    }
+
+    #[test]
+    fn pushes_ignored_directories_as_exact_directory_globs() {
+        let mut config = settings();
+        config.ignored_directories = vec![".git".to_string(), " target ".to_string()];
+        let args = args_of(&fd_search_command(Path::new("."), "main", &config));
+        let excludes = exclude_values(&args);
+        assert!(excludes.contains(&".git/".to_string()));
+        assert!(excludes.contains(&"target/".to_string()));
+    }
+
+    #[test]
+    fn pushes_directory_exclusions_as_contains_globs_and_never_file_rules() {
+        let mut config = settings();
+        config.exclusions = vec![
+            ".lock".to_string(),
+            ".min.js".to_string(),
+            "node_modules/".to_string(),
+            "*dist*/".to_string(),
+        ];
+        let args = args_of(&fd_search_command(Path::new("."), "main", &config));
+        let excludes = exclude_values(&args);
+        assert!(excludes.contains(&"*node_modules*/".to_string()));
+        // 规则里的 `*` 无特殊含义，先丢弃再包成包含 glob
+        assert!(excludes.contains(&"*dist*/".to_string()));
+        // 文件规则不下推，交给 accept_match 后筛选
+        assert!(!excludes.iter().any(|value| value.contains(".lock")));
+        assert!(!excludes.iter().any(|value| value.contains(".min.js")));
+    }
+
+    #[test]
+    fn escapes_glob_metacharacters_in_pushed_rules() {
+        let mut config = settings();
+        config.exclusions = vec!["a[b]c/".to_string()];
+        config.ignored_directories = vec!["x{y}".to_string()];
+        let args = args_of(&fd_search_command(Path::new("."), "main", &config));
+        let excludes = exclude_values(&args);
+        // 未转义时 fd 会把 [b] 当字符类，连带剪掉 abxc/
+        assert!(excludes.contains(&"*a\\[b\\]c*/".to_string()));
+        assert!(excludes.contains(&"x\\{y\\}/".to_string()));
+    }
+
+    #[test]
+    fn skips_blank_directory_rules() {
+        let mut config = settings();
+        config.ignored_directories = vec![String::new(), "   ".to_string()];
+        config.exclusions = vec!["/".to_string(), "*/".to_string(), "  /  ".to_string()];
+        let args = args_of(&fd_search_command(Path::new("."), "main", &config));
+        assert!(exclude_values(&args).is_empty());
+    }
+
+    #[test]
+    fn never_passes_full_path_and_sends_trimmed_lowercase_query() {
+        let args = args_of(&fd_search_command(Path::new("."), "  Utils  ", &settings()));
+        // --full-path 会把父目录纳入匹配，必须缺席
+        assert!(!args.iter().any(|arg| arg == "--full-path"));
+        assert_eq!(args.last().map(String::as_str), Some("."));
+        assert!(args.windows(2).any(|pair| pair[0] == "--" && pair[1] == "utils"));
+    }
+
+    #[test]
+    fn short_circuits_queries_that_can_never_match_a_name() {
+        // fd 对含分隔符的 pattern 直接报错退出，必须在调用前拦下
+        assert!(is_unmatchable_query(""));
+        assert!(is_unmatchable_query("utils/tree"));
+        assert!(is_unmatchable_query("utils\\tree"));
+        assert!(!is_unmatchable_query("tree.ts"));
+        assert!(!is_unmatchable_query("copier"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn format_command_quotes_empty_and_space_bearing_args() {
+        let mut command = Command::new("fd");
+        command.arg("--exclude").arg("my dir/").arg("");
+        assert_eq!(
+            format_command(&command),
+            "fd --exclude \"my dir/\" \"\""
+        );
     }
 }

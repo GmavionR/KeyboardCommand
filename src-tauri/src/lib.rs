@@ -1,4 +1,3 @@
-use glob::{MatchOptions, Pattern};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -160,51 +159,40 @@ pub(crate) fn user_error(action: &str, path: &Path, error: impl std::fmt::Displa
     format!("{action}失败：{}（{error}）", path.display())
 }
 
-fn path_matches(pattern: &str, name: &str) -> bool {
-    let pattern = pattern.trim_end_matches('/');
-    Pattern::new(pattern)
-        .map(|compiled| {
-            compiled.matches_with(
-                name,
-                MatchOptions {
-                    case_sensitive: false,
-                    require_literal_separator: false,
-                    require_literal_leading_dot: false,
-                },
-            )
-        })
-        .unwrap_or_else(|_| pattern.eq_ignore_ascii_case(name))
+// 规则按「名称包含该文本」判定，大小写不敏感。`*` 没有特殊含义，直接丢弃，
+// 这样早期以 `*.lock` 形式保存的规则仍然等价于 `.lock`。
+pub(crate) fn rule_text(rule: &str) -> String {
+    rule.trim()
+        .trim_end_matches('/')
+        .replace('*', "")
+        .trim()
+        .to_lowercase()
 }
 
-fn is_excluded_file(name: &str, settings: &TreeSettings) -> bool {
-    settings
-        .exclusions
-        .iter()
-        .filter(|rule| !rule.ends_with('/'))
-        .any(|rule| path_matches(rule, name))
+pub(crate) fn is_directory_rule(rule: &str) -> bool {
+    rule.trim().ends_with('/')
+}
+
+fn name_matches_rule(lowered_name: &str, rule: &str) -> bool {
+    let text = rule_text(rule);
+    !text.is_empty() && lowered_name.contains(&text)
 }
 
 pub(crate) fn is_allowed_file(name: &str, settings: &TreeSettings) -> bool {
-    if is_excluded_file(name, settings) {
-        return false;
-    }
-
-    if settings
-        .whitelist
+    let lowered = name.to_lowercase();
+    let excluded = settings
+        .exclusions
         .iter()
-        .any(|rule| rule.eq_ignore_ascii_case(name))
-    {
-        return true;
+        .filter(|rule| !is_directory_rule(rule))
+        .any(|rule| name_matches_rule(&lowered, rule));
+    if excluded {
+        return false;
     }
 
-    let Some((_, extension)) = name.rsplit_once('.') else {
-        return false;
-    };
-    let extension = format!(".{extension}");
     settings
         .whitelist
         .iter()
-        .any(|rule| rule.eq_ignore_ascii_case(&extension))
+        .any(|rule| name_matches_rule(&lowered, rule))
 }
 
 pub(crate) fn directory_block_reason(
@@ -214,17 +202,18 @@ pub(crate) fn directory_block_reason(
     let ignored = settings
         .ignored_directories
         .iter()
-        .find(|rule| rule.eq_ignore_ascii_case(name))
+        .find(|rule| rule.trim().eq_ignore_ascii_case(name))
         .map(|rule| format!("规则忽略目录 ({rule})"));
     if ignored.is_some() {
         return (true, ignored, false, None);
     }
 
+    let lowered = name.to_lowercase();
     let excluded = settings
         .exclusions
         .iter()
-        .filter(|rule| rule.ends_with('/'))
-        .find(|rule| path_matches(rule, name))
+        .filter(|rule| is_directory_rule(rule))
+        .find(|rule| name_matches_rule(&lowered, rule))
         .map(|rule| format!("命中目录排除规则 ({rule})"));
     (false, None, excluded.is_some(), excluded)
 }
@@ -570,4 +559,116 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings() -> TreeSettings {
+        TreeSettings {
+            whitelist: vec![".ts".to_string(), ".js".to_string(), "Dockerfile".to_string()],
+            exclusions: vec![
+                ".lock".to_string(),
+                ".min.js".to_string(),
+                "node_modules/".to_string(),
+            ],
+            ignored_directories: vec![".git".to_string(), "target".to_string()],
+            large_dir_threshold: 50,
+        }
+    }
+
+    #[test]
+    fn whitelist_matches_any_substring_of_the_name() {
+        let settings = settings();
+        assert!(is_allowed_file("main.ts", &settings));
+        assert!(is_allowed_file("treeUtils.tsx", &settings));
+        assert!(is_allowed_file("package.json", &settings));
+        assert!(is_allowed_file("Dockerfile.dev", &settings));
+        assert!(!is_allowed_file("photo.png", &settings));
+    }
+
+    #[test]
+    fn matching_ignores_case_on_both_sides() {
+        let mut settings = settings();
+        settings.whitelist = vec![".TS".to_string()];
+        assert!(is_allowed_file("MAIN.ts", &settings));
+
+        settings.whitelist = vec![".ts".to_string()];
+        settings.exclusions = vec![".LOCK".to_string()];
+        assert!(!is_allowed_file("Cargo.Lock", &settings));
+    }
+
+    #[test]
+    fn exclusions_veto_a_whitelisted_name() {
+        let mut settings = settings();
+        assert!(!is_allowed_file("Cargo.lock", &settings));
+        assert!(!is_allowed_file("bundle.min.js", &settings));
+
+        settings.exclusions.push(".map".to_string());
+        assert!(is_allowed_file("app.js", &settings));
+        assert!(!is_allowed_file("app.js.map", &settings));
+    }
+
+    #[test]
+    fn star_is_dropped_so_legacy_rules_still_work() {
+        let mut settings = settings();
+        settings.exclusions = vec!["*.lock".to_string()];
+        assert!(!is_allowed_file("Cargo.lock", &settings));
+
+        settings.exclusions = Vec::new();
+        settings.whitelist = vec!["*.ts".to_string()];
+        assert!(is_allowed_file("main.ts", &settings));
+    }
+
+    #[test]
+    fn blank_rules_never_match() {
+        let mut settings = settings();
+        settings.whitelist = vec![String::new(), "   ".to_string(), "*".to_string()];
+        assert!(!is_allowed_file("main.ts", &settings));
+
+        settings.whitelist = vec![".ts".to_string()];
+        settings.exclusions = vec![String::new(), "  ".to_string(), "*".to_string()];
+        assert!(is_allowed_file("main.ts", &settings));
+    }
+
+    #[test]
+    fn trailing_slash_scopes_an_exclusion_to_directories() {
+        let settings = settings();
+        let (ignored, _, excluded, _) = directory_block_reason("node_modules", &settings);
+        assert!(!ignored);
+        assert!(excluded);
+
+        assert!(is_allowed_file("node_modules.ts", &settings));
+
+        let (ignored, _, excluded, _) = directory_block_reason("node_modules_extra", &settings);
+        assert!(!ignored);
+        assert!(excluded);
+    }
+
+    #[test]
+    fn ignored_directories_match_the_whole_name_only() {
+        let settings = settings();
+        let (ignored, reason, excluded, _) = directory_block_reason("target", &settings);
+        assert!(ignored);
+        assert!(!excluded);
+        assert_eq!(reason.as_deref(), Some("规则忽略目录 (target)"));
+
+        let (ignored, _, _, _) = directory_block_reason("target_debug", &settings);
+        assert!(!ignored);
+
+        let (ignored, _, _, _) = directory_block_reason("TARGET", &settings);
+        assert!(ignored);
+    }
+
+    #[test]
+    fn ignored_directory_wins_over_directory_exclusion() {
+        let mut settings = settings();
+        settings.ignored_directories = vec!["build".to_string()];
+        settings.exclusions = vec!["build/".to_string()];
+        let (ignored, _, excluded, excluded_reason) = directory_block_reason("build", &settings);
+        assert!(ignored);
+        assert!(!excluded);
+        assert!(excluded_reason.is_none());
+    }
 }

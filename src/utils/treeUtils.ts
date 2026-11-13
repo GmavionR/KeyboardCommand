@@ -24,47 +24,37 @@ export function getAllSelectableFilesInNode(
   return files;
 }
 
+// 与 Rust 侧 rule_text 一致：规则按「名称包含该文本」判定，大小写不敏感，
+// `*` 无特殊含义直接丢弃，尾部 `/` 只表示这是一条目录规则。
+function ruleText(rule: string): string {
+  return rule.trim().replace(/\/+$/, '').replace(/\*/g, '').trim().toLowerCase();
+}
+
+function isDirectoryRule(rule: string): boolean {
+  return rule.trim().endsWith('/');
+}
+
+function nameMatchesRule(loweredName: string, rule: string): boolean {
+  const text = ruleText(rule);
+  return text.length > 0 && loweredName.includes(text);
+}
+
 export function isFileAllowed(
   filename: string,
   relativePath: string,
   settings: SettingsConfig
 ): boolean {
-  // Check ignored dirs in path segments
   const segments = relativePath.split(/[/\\]/);
   for (const seg of segments.slice(0, -1)) {
-    if (settings.ignoredDirectories.some((ignored) => ignored.toLowerCase() === seg.toLowerCase())) return false;
-    const isExcludedDirectory = settings.exclusions.some((rule) => {
-      if (!rule.endsWith('/')) return false;
-      const expression = rule
-        .slice(0, -1)
-        .split('*')
-        .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'))
-        .join('.*');
-      return new RegExp(`^${expression}$`, 'i').test(seg);
-    });
-    if (isExcludedDirectory) return false;
+    const loweredSeg = seg.toLowerCase();
+    if (settings.ignoredDirectories.some((ignored) => ignored.trim().toLowerCase() === loweredSeg)) return false;
+    if (settings.exclusions.some((rule) => isDirectoryRule(rule) && nameMatchesRule(loweredSeg, rule))) return false;
   }
 
-  const matchesRule = (rule: string, value: string) => {
-    const expression = rule
-      .split('*')
-      .map((part) => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&'))
-      .join('.*');
-    return new RegExp(`^${expression}$`, 'i').test(value);
-  };
+  const loweredName = filename.toLowerCase();
+  if (settings.exclusions.some((rule) => !isDirectoryRule(rule) && nameMatchesRule(loweredName, rule))) return false;
 
-  // Exclusions are name-based; a trailing slash marks a directory rule.
-  for (const rule of settings.exclusions) {
-    if (!rule.endsWith('/') && matchesRule(rule, filename)) return false;
-  }
-
-  // Check whitelist
-  const dotIndex = filename.lastIndexOf('.');
-  const ext = dotIndex !== -1 ? filename.slice(dotIndex).toLowerCase() : '';
-  const matchExt = settings.whitelist.some((rule) => rule.toLowerCase() === ext);
-  const matchExact = settings.whitelist.some((rule) => rule.toLowerCase() === filename.toLowerCase());
-
-  return matchExt || matchExact;
+  return settings.whitelist.some((rule) => nameMatchesRule(loweredName, rule));
 }
 
 export function getNodeTriState(
@@ -76,7 +66,7 @@ export function getNodeTriState(
   if (node.type === 'file') {
     return selectedPaths.has(node.path) ? 'checked' : 'unchecked';
   }
-  if (node.isIgnored) return 'unchecked';
+  if (node.isIgnored || node.isExcluded) return 'unchecked';
 
   const isWithinNode = (path: string) =>
     node.path === '' || path.startsWith(`${node.path}/`);

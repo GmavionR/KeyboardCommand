@@ -1,3 +1,27 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* 开发面板命令行滚动条：沿用终端块的 slate 配色，不用浏览器默认样式 */
+.fd-command-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #020617;
+}
+.fd-command-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.fd-command-scroll::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 4px;
+}
+.fd-command-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+.fd-command-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+.fd-command-scroll::-webkit-scrollbar-corner {
+  background: #020617;
+}

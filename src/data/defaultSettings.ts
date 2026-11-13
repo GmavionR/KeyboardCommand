@@ -31,12 +31,10 @@ export const DEFAULT_IGNORED_DIRS = [
   '.gradle',
 ];
 
+// 名称包含即命中：.ts 覆盖 .tsx，.js 覆盖 .jsx/.json/.jsonc/.json5，.md 覆盖 .mdx
 export const DEFAULT_WHITELIST = [
   '.ts',
-  '.tsx',
   '.js',
-  '.jsx',
-  '.json',
   '.md',
   '.css',
   '.html',
@@ -50,15 +48,14 @@ export const DEFAULT_WHITELIST = [
   '.env.example',
 ];
 
+// .lock 一条即覆盖 package-lock.json / pnpm-lock.yaml / yarn.lock / Cargo.lock
 export const DEFAULT_EXCLUSIONS = [
-  '*.lock',
-  'package-lock.json',
-  'pnpm-lock.yaml',
-  'yarn.lock',
+  '.lock',
+  '.min.js',
+  '.map',
+  '.tsbuildinfo',
   '.DS_Store',
   'Thumbs.db',
-  '*.min.js',
-  '*.map',
 ];
 
 export const DEFAULT_SETTINGS: SettingsConfig = {

@@ -11,8 +11,8 @@ Status: resolved
 
 - 实时搜索使用用户自行安装的 `fd`，应用不随安装包打包 `fd.exe`。
 - 应用从系统 `PATH` 查找并启动 `fd`。若找不到或无法启动，禁用搜索输入框，并在输入框旁提示用户安装 `fd`；不回退到 `es.exe` 或另一套应用内搜索实现。
-- 调用 fd 时包含隐藏项目和 fd 默认会忽略的路径，并将 KbcApp 设置中的目录忽略规则及文件夹排除规则传给 fd。文件排除规则由应用对 fd 返回的文件结果应用：fd 的 `--exclude` 会排除匹配的文件或文件夹，直接传入文件专属规则可能连带剪枝同名文件夹。搜索结果再由应用依据文件白名单筛选。排除规则语义见 [issue 29](29-file-exclusion-rules.md)。[fd 官方文档](https://github.com/sharkdp/fd#excluding-specific-files-or-directories)
+- 调用 fd 时**保留其原生 `.gitignore` 等忽略规则过滤**，只用 `--hidden` 放开隐藏项（白名单里的 `.env.example` 之类仍需可搜）。忽略目录以 `name/`、目录排除规则以 `*text*/` 传给 `--exclude` 剪枝；实测 fd 的 glob 尾斜杠只匹配目录路径，两种写法都不会误伤同名文件。文件排除规则由应用对 fd 返回的文件结果应用，搜索结果再由应用依据文件白名单筛选。排除规则语义见 [issue 29](29-file-exclusion-rules.md)，下推写法与实测依据见 [issue 52](52-fd-gitignore-and-dev-command.md)。[fd 官方文档](https://github.com/sharkdp/fd#excluding-specific-files-or-directories)
 - fd 可遍历的文件系统范围内，成功搜索且没有匹配项时，显示“没有搜索到”。不再检测 Everything 索引覆盖，也不因空结果触发搜索回退。
 - 搜索时启用 fd 的错误输出选项，以捕获无权访问等文件系统错误；继续显示可访问路径的结果，并提示搜索不完整。若没有可显示结果但发生了遍历错误，显示搜索不完整，不能显示为普通无结果。
 
-官方 `fd` 文档说明它支持隐藏/忽略项选项、固定文本和完整路径匹配，以及 `--exclude` glob；其默认行为会忽略隐藏项及 `.gitignore` 等规则。本功能明确覆盖这些默认过滤行为，由 KbcApp 的配置控制搜索范围。[fd 官方文档](https://github.com/sharkdp/fd)
+官方 `fd` 文档说明它支持隐藏/忽略项选项、固定文本和完整路径匹配，以及 `--exclude` glob；其默认行为会忽略隐藏项及 `.gitignore` 等规则。~~本功能明确覆盖这些默认过滤行为，由 KbcApp 的配置控制搜索范围。~~ 已被 [issue 52](52-fd-gitignore-and-dev-command.md) 取代：改为保留 `.gitignore` 过滤，只放开隐藏项。[fd 官方文档](https://github.com/sharkdp/fd)

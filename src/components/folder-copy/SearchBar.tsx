@@ -11,7 +11,11 @@ import {
   Info,
   XCircle,
   RefreshCw,
+  Terminal,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { SearchMatch, SettingsConfig } from '../../types';
 import { searchPaths } from '../../data/searchBackend';
 
@@ -49,6 +53,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   const [hasSearched, setHasSearched] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  // 后端只在 debug 构建下发 command，release 构建恒为 undefined，面板自然不渲染
+  const [fdCommand, setFdCommand] = useState<string | null>(null);
+  const [commandCopied, setCommandCopied] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +72,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         setHasMore(outcome.hasMore);
         setIsIncomplete(outcome.incomplete);
         setIncompleteWarning(outcome.warning);
+        setFdCommand(outcome.command ?? null);
+        setCommandCopied(false);
         setSearchError(null);
         setHighlightedIndex(0);
         setHasSearched(true);
@@ -75,6 +84,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         setHasMore(false);
         setIsIncomplete(false);
         setIncompleteWarning(null);
+        setFdCommand(null);
         setSearchError(String(error));
         setHasSearched(true);
         setIsDropdownOpen(true);
@@ -111,6 +121,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       setHasMore(false);
       setIsIncomplete(false);
       setIncompleteWarning(null);
+      setFdCommand(null);
       setSearchError(null);
       setHasSearched(false);
       setIsSearching(false);
@@ -170,6 +181,17 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     setIsDropdownOpen(true);
   };
 
+  const handleCopyCommand = async () => {
+    if (!fdCommand) return;
+    try {
+      await writeText(fdCommand);
+      setCommandCopied(true);
+      setTimeout(() => setCommandCopied(false), 2000);
+    } catch {
+      setCommandCopied(false);
+    }
+  };
+
   const renderHighlightedText = (text: string, query: string) => {
     if (!query.trim()) return text;
     const q = query.trim().toLowerCase();
@@ -219,7 +241,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                 ? `fd 不可用：搜索已停用（安装后重试：${FD_INSTALL_COMMAND}）`
                 : !rootPath
                 ? '请先选择要搜索的文件夹'
-                : '搜索文件或文件夹路径 (Ctrl+F 快速聚焦，500ms 自动搜索)'
+                : '搜索文件名或文件夹名 (Ctrl+F 快速聚焦，500ms 自动搜索)'
             }
             className={`w-full pl-9 pr-28 py-2 bg-white dark:bg-slate-900 border text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-lg focus:outline-none transition-all shadow-2xs ${
               !isFdAvailable
@@ -286,12 +308,52 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950/70 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
             <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
               <Search className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-              匹配路径结果（{results.length} 条）
+              匹配名称结果（{results.length} 条）
             </span>
             <span className="text-slate-400 dark:text-slate-500">
               文件回车切换勾选，目录回车仅定位 (保持下拉开启)
             </span>
           </div>
+
+          {/* 开发模式命令面板：release 构建后端不下发 command，此块不渲染 */}
+          {fdCommand && (
+            <div className="px-3 py-2 bg-slate-900 dark:bg-slate-950">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <Terminal className="w-3 h-3 text-emerald-400" />
+                  本次执行的 fd 命令
+                  <span className="px-1 py-px rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 text-[9px] font-bold tracking-normal">
+                    仅开发模式
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyCommand}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium transition-colors cursor-pointer ${
+                    commandCopied
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700 hover:text-slate-100'
+                  }`}
+                  title="复制完整命令，可直接粘贴到终端复现本次搜索"
+                >
+                  {commandCopied ? (
+                    <Check className="w-3 h-3" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                  <span>{commandCopied ? '已复制' : '复制'}</span>
+                </button>
+              </div>
+              <div className="fd-command-scroll max-h-28 overflow-auto rounded-md bg-slate-950 border border-slate-700/60 px-2.5 py-2">
+                <code className="block font-mono text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all select-text">
+                  {fdCommand}
+                </code>
+              </div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-slate-500">
+                已保留 fd 原生 .gitignore 过滤；只匹配文件/目录自身名称，目录规则经 --exclude 剪枝，文件规则由应用后筛选。
+              </p>
+            </div>
+          )}
 
           {/* Results list */}
           <div className="max-h-72 overflow-y-auto">
@@ -318,7 +380,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                     <Info className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                     <span className="text-slate-700 dark:text-slate-300 font-medium">没有搜索到</span>
                     <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                      请检查相对路径、扩展名或确认是否已被排除规则忽略
+                      只比对文件/文件夹自身的名称，请检查拼写、扩展名或确认是否已被排除规则忽略
                     </span>
                   </div>
                 )}
@@ -375,7 +437,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                           )}
                         </div>
                         <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                          {renderHighlightedText(item.relativePath, inputValue)}
+                          {item.relativePath.slice(0, item.relativePath.length - item.name.length)}
+                          {renderHighlightedText(item.name, inputValue)}
                         </div>
                       </div>
                     </div>
@@ -401,7 +464,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             <div className="px-3 py-2 bg-amber-50 dark:bg-amber-950/40 border-t border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-300 text-xs flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                <span className="font-medium">结果过多，请输入更准确的路径</span>
+                <span className="font-medium">结果过多，请输入更准确的名称</span>
               </div>
               <span className="text-[10px] text-amber-700 dark:text-amber-400/80">
                 已按路径升序显示前 10 条

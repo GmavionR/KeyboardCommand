@@ -57,7 +57,7 @@ export const StatePresetBar: React.FC<StatePresetBarProps> = ({
       id: 'search_over10',
       label: '2. 搜索>10条',
       icon: <Search className="w-3.5 h-3.5 text-amber-400" />,
-      desc: '搜索单占一行，真实 fd 结果过多时提示“结果过多，请输入更准确的路径”',
+      desc: '搜索单占一行，真实 fd 结果过多时提示“结果过多，请输入更准确的名称”',
     },
     {
       id: 'search_empty',

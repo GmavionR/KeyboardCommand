@@ -35,17 +35,17 @@ SQLite 是为应用未来其他功能可能需要的结构化数据存储作准�
 - 用户点击按钮后打开文件夹选择对话框，并加载选中的文件夹。
 - 页面显示当前文件夹路径，并提供最近文件夹下拉列表；选择其中的路径时重新加载对应文件夹。加载失败的文件夹不进入该列表。术语见 [GLOSSARY.md](GLOSSARY.md) 的「最近文件夹」。
 - 文件以树形目录显示，文件和文件夹使用不同图标。
-- 支持在当前文件夹路径下搜索文件和文件夹。用户停止输入 500 毫秒后，以大小写不敏感的纯文本包含方式匹配相对路径；下拉最多显示 10 个符合当前规则的结果，更多结果时提示用户输入更准确的路径。上下键移动结果，Enter 对文件切换选择、对文件夹只定位；树展开到对应节点并滚动到可见位置。详见 [issue 22](.scratch/folder-content-copy/issues/22-live-search-experience.md)。
+- 支持在当前文件夹路径下搜索文件和文件夹。用户停止输入 500 毫秒后，以大小写不敏感的纯文本包含方式匹配**文件或文件夹自身的名称**；父目录路径命中不算匹配，因此含路径分隔符的查询无结果。下拉最多显示 10 个符合当前规则的结果，更多结果时提示用户输入更准确的名称。上下键移动结果，Enter 对文件切换选择、对文件夹只定位；树展开到对应节点并滚动到可见位置。详见 [issue 22](.scratch/folder-content-copy/issues/22-live-search-experience.md) 与 [issue 53](.scratch/folder-content-copy/issues/53-name-only-search.md)。
 - 主页面和设置弹窗的控件、操作流程与布局见[界面绘制说明](docs/design/文件夹复制界面绘制说明.md)；采用桌面端左右分栏，窄窗口切换为单面板，具体规范见 [issue 32](.scratch/folder-content-copy/issues/32-folder-copy-ui-layout.md)。
 - 主页面标题为“文件夹内容复制”，左侧文件树、右侧“当前选择 / 复制历史”面板，默认显示当前选择；底部固定显示选择数量和“复制文件上下文包”按钮。无选中项时禁用复制，选择列表支持直接移除。
-- 实时搜索使用用户自行安装的 `fd`，应用不打包 fd。搜索时覆盖 fd 默认跳过的隐藏项和忽略项，再应用 KbcApp 的目录忽略/文件路径排除规则，最后按白名单筛选。fd 不可用时禁用搜索输入框并提示安装；无匹配时显示“没有搜索到”。遍历发生部分错误时展示可访问结果并提示搜索不完整。详见 [issue 26](.scratch/folder-content-copy/issues/26-fd-search-availability-and-errors.md)。
+- 实时搜索使用用户自行安装的 `fd`，应用不打包 fd。**保留 fd 原生对 `.gitignore` 等忽略规则的过滤**，只用 `--hidden` 放开隐藏项；再把 KbcApp 的忽略目录与目录排除规则交给 `--exclude` 剪枝，文件排除规则与白名单由应用后筛选。因此被 `.gitignore` 忽略的文件即使出现在树中也不会被搜到。fd 不可用时禁用搜索输入框并提示安装；无匹配时显示“没有搜索到”。遍历发生部分错误时展示可访问结果并提示搜索不完整。开发模式下额外展示本次执行的 fd 命令，生产模式不展示。详见 [issue 26](.scratch/folder-content-copy/issues/26-fd-search-availability-and-errors.md) 与 [issue 52](.scratch/folder-content-copy/issues/52-fd-gitignore-and-dev-command.md)。
 - 单个文件夹的直接子项超过 50 个时视为大目录；阈值可在本功能设置中修改。大目录按需分批加载，每批 30 项，并提供加载更多操作。
 - 提供统一的设置按钮和设置弹窗，集中配置本功能涉及的选项。保存设置后重新加载当前文件夹，使新设置立即生效。
 
 ### 4.2 文件筛选与忽略目录
 
-- 文件类型使用全局共用、可编辑的扩展名和特殊文件名白名单。默认涵盖常见源码、配置、文档和脚本文本；敏感文本文件（如 `.env`、`.npmrc`、`*.pem`、`*.key`）也按普通白名单文件处理，不设硬编码敏感文件黑名单、不扫描文件内容。二进制文件不纳入默认白名单。默认锁文件和明显生成文件使用排除规则，完整清单见 [issue 21](.scratch/folder-content-copy/issues/21-default-extension-list.md)。
-- 用户可在设置中编辑全局名称排除规则，规则在白名单后生效。规则只匹配名称，在根目录下任意层级适用；末尾带 `/` 表示文件夹规则，不带 `/` 表示文件规则，支持 `*` 通配且不区分大小写。排除文件在树中隐藏，排除文件夹显示为“已排除”且不展开；搜索、递归选择和历史选择恢复应用相同规则。详见 [issue 29](.scratch/folder-content-copy/issues/29-file-exclusion-rules.md)。
+- 文件类型使用全局共用、可编辑的名称白名单，**文件名包含规则文本即命中**，不区分大小写，不支持通配符。默认只涵盖常见源码、配置、文档和脚本文本；敏感文本文件（如 `.env`、`.npmrc`、`.pem`、`.key`）也按普通白名单文件处理，不设硬编码敏感文件黑名单、不扫描文件内容。二进制文件不纳入默认白名单。默认锁文件和明显生成文件使用排除规则，完整清单见 [issue 21](.scratch/folder-content-copy/issues/21-default-extension-list.md)。
+- 用户可在设置中编辑全局名称排除规则，规则在白名单后生效。排除规则同样是**名称包含即命中**、不区分大小写、无通配符；只匹配名称，在根目录下任意层级适用；末尾带 `/` 表示文件夹规则，不带 `/` 表示文件规则。排除文件在树中隐藏，排除文件夹显示为“已排除”且不展开；搜索、递归选择和历史选择恢复应用相同规则。匹配语义见 [issue 51](.scratch/folder-content-copy/issues/51-substring-rule-matching.md)，呈现与一致性见 [issue 29](.scratch/folder-content-copy/issues/29-file-exclusion-rules.md)。
 - 忽略目录使用全局共用规则，按目录名匹配当前根目录下任意层级。默认包括 `.git`、`.hg`、`.svn`、`node_modules`、`bower_components`、`target`、`dist`、`build`、`out`、`.next`、`.nuxt`、`.output`、`.vite`、`.turbo`、`coverage`、`playwright-report`、`test-results`、`__pycache__`、`.pytest_cache`、`.mypy_cache`、`.venv`、`venv`、`.pnpm`、`.cache`、`.idea`、`.vscode`、`.history`、`.gradle`；用户可逐项编辑并恢复默认值。被忽略目录仍显示为已忽略节点，不展开其后代。详见 [issue 27](.scratch/folder-content-copy/issues/27-ignored-directory-defaults.md)。
 - 设置弹窗集中管理扩展名/特殊文件名白名单、文件名/路径排除规则、忽略目录和大目录阈值。
 - 历史选择恢复始终遵循当前筛选规则；规则不再允许的文件不会恢复为选中状态，详见 [issue 10](.scratch/folder-content-copy/issues/10-filter-changes-and-saved-selection.md)。
