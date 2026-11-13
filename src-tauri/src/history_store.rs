@@ -350,3 +350,119 @@ pub async fn read_history_body(app: tauri::AppHandle, history_id: String) -> Res
     .await
     .map_err(|error| format!("历史正文读取任务异常终止，请重试。（{error}）"))?
 }
+
+// 设置数据库由 sql 插件落在 app_config_dir，历史落在 app_data_dir；
+// Windows 上两者同为 %APPDATA%\{identifier}，但仍分别取真实路径下发，不靠假设。
+const SETTINGS_DB_FILE: &str = "settings.db";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StorageStats {
+    database_path: String,
+    database_bytes: u64,
+    history_path: String,
+    history_bytes: u64,
+    history_count: usize,
+    history_limit: usize,
+}
+
+// 历史目录平铺存放，只累加文件本身，不递归子目录
+fn directory_bytes(directory: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return 0;
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.metadata().ok())
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+// WAL 模式下 -wal/-shm 也真实占盘，漏掉它们会把占用报小
+fn database_bytes(path: &Path) -> u64 {
+    let mut total = 0;
+    for suffix in ["", "-wal", "-shm"] {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(suffix);
+        if let Ok(metadata) = fs::metadata(&name) {
+            total += metadata.len();
+        }
+    }
+    total
+}
+
+#[tauri::command]
+pub async fn storage_stats(app: tauri::AppHandle) -> Result<StorageStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let config_dir = app
+            .path()
+            .app_config_dir()
+            .map_err(|error| format!("无法定位应用配置目录：{error}"))?;
+        let database_path = config_dir.join(SETTINGS_DB_FILE);
+        let history_path = history_dir(&app)?;
+        Ok(StorageStats {
+            database_path: database_path.display().to_string(),
+            database_bytes: database_bytes(&database_path),
+            history_path: history_path.display().to_string(),
+            history_bytes: directory_bytes(&history_path),
+            history_count: list_metas(&history_path).unwrap_or_default().len(),
+            history_limit: HISTORY_LIMIT,
+        })
+    })
+    .await
+    .map_err(|error| format!("存储统计任务异常终止，请重试。（{error}）"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("kbc-storage-{label}-{}", new_record_id()));
+        fs::create_dir_all(&directory).expect("创建临时目录");
+        directory
+    }
+
+    #[test]
+    fn directory_bytes_sums_flat_files_and_ignores_subdirectories() {
+        let directory = temp_dir("flat");
+        fs::write(directory.join("a.md"), vec![0u8; 120]).unwrap();
+        fs::write(directory.join("b.meta.json"), vec![0u8; 30]).unwrap();
+        let nested = directory.join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("big.md"), vec![0u8; 9_999]).unwrap();
+
+        assert_eq!(directory_bytes(&directory), 150);
+
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn directory_bytes_is_zero_when_the_directory_does_not_exist() {
+        let missing = std::env::temp_dir().join(format!("kbc-storage-absent-{}", new_record_id()));
+        assert_eq!(directory_bytes(&missing), 0);
+    }
+
+    #[test]
+    fn database_bytes_counts_wal_and_shm_sidecars() {
+        let directory = temp_dir("db");
+        let database = directory.join(SETTINGS_DB_FILE);
+        fs::write(&database, vec![0u8; 4_096]).unwrap();
+        fs::write(database.with_file_name("settings.db-wal"), vec![0u8; 512]).unwrap();
+        fs::write(database.with_file_name("settings.db-shm"), vec![0u8; 32]).unwrap();
+        // 同名前缀的无关文件不该被算进来
+        fs::write(database.with_file_name("settings.db-journal"), vec![0u8; 7_777]).unwrap();
+
+        assert_eq!(database_bytes(&database), 4_640);
+
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn database_bytes_is_zero_before_the_first_write() {
+        let directory = temp_dir("empty");
+        assert_eq!(database_bytes(&directory.join(SETTINGS_DB_FILE)), 0);
+        let _ = fs::remove_dir_all(&directory);
+    }
+}

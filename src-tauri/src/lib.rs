@@ -555,7 +555,8 @@ pub fn run() {
             history_store::save_history,
             history_store::replace_history,
             history_store::delete_history,
-            history_store::read_history_body
+            history_store::read_history_body,
+            history_store::storage_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

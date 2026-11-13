@@ -25,6 +25,7 @@ SQLite 是为应用未来其他功能可能需要的结构化数据存储作准�
 - 无参数启动时打开默认功能页 `/folder-copy`。目标路径须通过功能路由白名单校验；冷启动收到无效路径时打开 `/folder-copy` 并提示错误，运行中收到无效路径时保持当前页面并提示错误。
 - 有效外部请求到达时，显示窗口、从最小化或隐藏状态恢复、聚焦窗口并导航到目标功能。
 - 首版不注册自定义 URI Scheme；未来若需要通过浏览器或可点击链接唤起应用，再评估 Tauri Deep Link。
+- 全局系统设置只呈真实状态：主题、应用版本、SQLite 连接与模式、存储路径与占用、历史条数均取自实际运行时，不用固定演示值。尚未接入原生能力的项不显示可操作开关，避免勾选后不生效；更新端点未配置时如实呈现不可用，不给模拟的「已是最新版本」。快捷键说明须与实际生效范围一致（应用内监听不等于系统级热键）。详见 [issue 44](.scratch/folder-content-copy/issues/44-system-settings-and-desktop-integrations.md)，未接入能力的后续工作见 [issue 54](.scratch/folder-content-copy/issues/54-autostart-notification-and-global-hotkey.md)。
 
 ## 4. 当前功能：浏览文件夹并复制文件内容
 
