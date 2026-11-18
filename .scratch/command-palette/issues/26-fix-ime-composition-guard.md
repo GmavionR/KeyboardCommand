@@ -1,7 +1,7 @@
 # 26：现有搜索框输入法组字守卫修复
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Label: ready-for-agent
 
 ## 要构建什么
@@ -24,12 +24,20 @@ Label: ready-for-agent
 
 ## 验收条件
 
-- [ ] 使用微软拼音输入法在文件夹搜索框打字，按数字键或空格键上屏汉字，搜索下拉列表中不高亮跳动。
-- [ ] 中文拼音打字过程中按 Enter 键确认上屏英文字符，不触发文件的勾选或文件夹树展开。
-- [ ] 打字过程中按上下方向键翻选输入法候选词，文件结果列表的高亮条保持稳定不动。
-- [ ] 汉字上屏后，按 Enter 键正常切换文件勾选或定位展开文件夹。
-- [ ] `bun run build` 编译无类型或语法错误。
+- [x] 使用微软拼音输入法在文件夹搜索框打字，按数字键或空格键上屏汉字，搜索下拉列表中不高亮跳动。
+- [x] 中文拼音打字过程中按 Enter 键确认上屏英文字符，不触发文件的勾选或文件夹树展开。
+- [x] 打字过程中按上下方向键翻选输入法候选词，文件结果列表的高亮条保持稳定不动。
+- [x] 汉字上屏后，按 Enter 键正常切换文件勾选或定位展开文件夹。
+- [x] `bun run build` 编译无类型或语法错误。
 
 ## Blocked by
 
 None (can start immediately)
+
+## Comments
+
+- 2026-11-18：实现完成。
+  - `SearchBar.tsx`：`handleKeyDown` 顶部加入 `if (e.nativeEvent.isComposing || e.keyCode === 229) return;`
+  - `TopToolbar.tsx`：`handleKeyDown` 顶部同样加入 IME 组字守卫
+  - `SettingsModal.tsx`：白名单、排除规则、忽略目录三处内联 `onKeyDown` lambda 均加入守卫
+  - `bun run build`（`tsc && vite build`）零错误零警告通过

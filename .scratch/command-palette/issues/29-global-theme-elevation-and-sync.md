@@ -1,7 +1,7 @@
 # 29：全局 ThemeProvider 提升与跨窗口实时双向主题同步
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Label: ready-for-agent
 
 ## 要构建什么
@@ -24,12 +24,20 @@ Label: ready-for-agent
 
 ## 验收条件
 
-- [ ] 在主窗口任何页面直接调用 `useTheme()` 均正常工作，不抛出缺少 Provider 的异常。
-- [ ] 命令面板在浅色与深色模式下，背景、文字、边框与高亮均能无缝适配现有 `slate/blue` 设计系统。
-- [ ] 切换命令面板外观为深色，面板立即变为深色，且主窗口在后台无刷新实时同步变为深色。
-- [ ] 切换命令面板外观为浅色，面板立即变为浅色，且主窗口同步变为浅色。
-- [ ] `bun run build` 编译通过。
+- [x] 在主窗口任何页面直接调用 `useTheme()` 均正常工作，不抛出缺少 Provider 的异常。
+- [x] 命令面板在浅色与深色模式下，背景、文字、边框与高亮均能无缝适配现有 `slate/blue` 设计系统。
+- [x] 切换命令面板外观为深色，面板立即变为深色，且主窗口在后台无刷新实时同步变为深色。
+- [x] 切换命令面板外观为浅色，面板立即变为浅色，且主窗口同步变为浅色。
+- [x] `bun run build` 编译通过。
 
 ## Blocked by
 
 - [27：独立面板 Webview 窗口创建与失焦隐藏生命周期](27-standalone-palette-window.md)
+
+## Comments
+
+- 2026-11-18：实现完成。
+  - `ThemeContext.tsx`：引入 `@tauri-apps/api/event` 的 `emit`/`listen`；`setThemeMode` 改为同时 `emit('kbc://theme-changed', mode)` 广播；新增 `useEffect` 监听跨 Webview 的 `kbc://theme-changed` 事件并更新本地状态，避免循环广播；`setThemeMode` 用 `useCallback` 稳定引用。
+  - `main.tsx`：在 `RouterProvider` 外层包裹 `ThemeProvider`，使全部路由（`/folder-copy`、`/prompts`、`/palette`）均在同一 Provider 树中。
+  - `App.tsx`：去除 `FolderCopyPage` 内原有的 `ThemeProvider` 包裹，避免双重 Provider 嵌套。
+  - `bun run build`（`tsc && vite build`）零错误通过。

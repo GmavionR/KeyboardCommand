@@ -1,7 +1,7 @@
 # 30：可扩展命令注册表与路由单一来源架构
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Label: ready-for-agent
 
 ## 要构建什么
@@ -41,10 +41,10 @@ Label: ready-for-agent
 
 ## 验收条件
 
-- [ ] 功能路径在应用中收敛为单一事实清单，新增路由只需修改一处。
-- [ ] `CommandRegistry` 能正确加载所有内置 Provider，聚合产出首版命令清单。
-- [ ] 动态 Provider 契约支持后续无侵入扩展 `UserCustomCommandProvider`。
-- [ ] 单元测试通过，`bun run build` 编译通过。
+- [x] 功能路径在应用中收敛为单一事实清单，新增路由只需修改一处。
+- [x] `CommandRegistry` 能正确加载所有内置 Provider，聚合产出首版命令清单。
+- [x] 动态 Provider 契约支持后续无侵入扩展 `UserCustomCommandProvider`。
+- [x] 单元测试通过，`bun run build` 编译通过。
 
 ## Blocked by
 

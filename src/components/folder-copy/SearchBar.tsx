@@ -139,6 +139,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 输入法组字守卫：组字期间（isComposing=true 或 keyCode=229）不响应任何快捷键
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       setIsDropdownOpen(false);

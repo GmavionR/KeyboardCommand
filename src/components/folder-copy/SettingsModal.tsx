@@ -347,7 +347,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="text"
                 value={newWhitelistItem}
                 onChange={(e) => setNewWhitelistItem(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddWhitelist()}
+                onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') handleAddWhitelist(); }}
                 placeholder="添加文件名包含的文本，如 .rs, .vue, Jenkinsfile"
                 className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
               />
@@ -422,7 +422,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="text"
                 value={newExclusionItem}
                 onChange={(e) => setNewExclusionItem(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddExclusion()}
+                onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') handleAddExclusion(); }}
                 placeholder="添加排除文本，如 .lock, .min.js, dist/"
                 className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
               />
@@ -491,7 +491,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="text"
                 value={newIgnoredDirItem}
                 onChange={(e) => setNewIgnoredDirItem(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddIgnoredDir()}
+                onKeyDown={(e) => { if (e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') handleAddIgnoredDir(); }}
                 placeholder="添加忽略目录名，如 .next, target, build"
                 className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
               />

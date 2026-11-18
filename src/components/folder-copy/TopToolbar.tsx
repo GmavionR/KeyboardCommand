@@ -86,6 +86,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // 输入法组字守卫：组字期间不响应 Enter / ArrowDown 等快捷键
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') {
       handleSubmitPath();
     } else if (e.key === 'Escape') {

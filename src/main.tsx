@@ -9,6 +9,7 @@ import {
 } from "./activation";
 import { installBrowserMenuPolicy } from "./data/browserMenuPolicy";
 import { router } from "./router";
+import { ThemeProvider } from "./context/ThemeContext";
 
 const supportedRoutes = new Set(["/folder-copy", "/prompts"]);
 
@@ -45,7 +46,9 @@ async function bootstrap() {
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </React.StrictMode>,
   );
 }
