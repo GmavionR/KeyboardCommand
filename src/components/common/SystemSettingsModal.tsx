@@ -11,7 +11,10 @@ import {
   Sliders,
   Laptop,
   FolderArchive,
+  Globe,
+  CheckCircle,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useTheme } from '../../context/ThemeContext';
 import { formatBytes } from '../../utils/treeUtils';
 import {
@@ -32,6 +35,12 @@ interface SystemSettingsModalProps {
   onClose: () => void;
 }
 
+interface ShortcutStatusInfo {
+  shortcut: string;
+  registered: boolean;
+  error: string | null;
+}
+
 export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -46,6 +55,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [journalMode, setJournalMode] = useState<string | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [shortcutStatus, setShortcutStatus] = useState<ShortcutStatusInfo | null>(null);
 
   const refreshStatus = useCallback(async () => {
     setIsRefreshing(true);
@@ -90,6 +100,14 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       });
 
     void refreshStatus();
+    void invoke<ShortcutStatusInfo>('get_shortcut_status')
+      .then((value) => {
+        if (!cancelled) setShortcutStatus(value);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setShortcutStatus({ shortcut: 'Ctrl+Shift+K', registered: false, error: '无法读取快捷键状态' });
+      });
     return () => {
       cancelled = true;
     };
@@ -342,7 +360,57 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             )}
           </div>
 
-          {/* Section 4: 应用内快捷键与界面行为 */}
+          {/* Section 4: 系统级全局快捷键 */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <span className="font-semibold text-slate-900 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-teal-500" />
+                系统级全局快捷键
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                后台及失焦时均可唤起
+              </span>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3.5 space-y-2.5">
+              {/* 命令面板热键行 */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-slate-700 dark:text-slate-300">命令面板唤起 / 收起</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    全局有效（后台及失焦时均可唤起）
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded border border-slate-300 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">
+                    Ctrl + Shift + K
+                  </span>
+                  {shortcutStatus ? (
+                    shortcutStatus.registered ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                    )
+                  ) : (
+                    <span className="text-[11px] text-slate-400">检测中…</span>
+                  )}
+                </div>
+              </div>
+              {/* 冲突错误提示 */}
+              {shortcutStatus && !shortcutStatus.registered && (
+                <div className="flex items-start space-x-2 text-rose-700 dark:text-rose-300 text-[11px] bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded border border-rose-200 dark:border-rose-800/60">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px text-rose-500" />
+                  <span>
+                    {shortcutStatus.error
+                      ? `该快捷键已被系统或其他应用占用，请更换。（详情：${shortcutStatus.error}）`
+                      : '该快捷键未能注册，请检查是否被其他应用占用。'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 5: 应用内快捷键与界面行为 */}
           <div className="space-y-3">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
               <span className="font-semibold text-slate-900 dark:text-slate-200 text-xs flex items-center gap-1.5">
@@ -387,7 +455,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              开机自启、桌面通知与系统级全局快捷键尚未接入对应的原生能力，因此这里不显示相关开关，
+              开机自启与桌面通知尚未接入对应的原生能力，因此这里不显示相关开关，
               以免出现勾选后不生效的假控制；接入后会在此处出现。
             </p>
           </div>

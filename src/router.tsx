@@ -12,6 +12,7 @@ import {
   subscribeActivationNotice,
 } from "./activation";
 import { FolderCopyPage } from "./App";
+import { CommandPalette } from "./components/palette/CommandPalette";
 
 function RootLayout() {
   const notice = useSyncExternalStore(
@@ -72,7 +73,13 @@ const promptsRoute = createRoute({
   component: PromptsPage,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, folderCopyRoute, promptsRoute]);
+const paletteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/palette",
+  component: CommandPalette,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, folderCopyRoute, promptsRoute, paletteRoute]);
 
 export const router = createRouter({ routeTree });
 

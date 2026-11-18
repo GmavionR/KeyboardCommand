@@ -87,4 +87,4 @@ SQLite 是为应用未来其他功能可能需要的结构化数据存储作准�
 
 各项已确认决定和待讨论问题见 [文件夹浏览与复制的 Wayfinder 地图](.scratch/folder-content-copy/map.md)。用户本机已安装 `fd`、`fzf`、`rg` 和 `es.exe`；本功能运行时搜索使用用户自行安装的 `fd`，`fzf`、`rg` 和 `es.exe` 不作为本功能搜索依赖。该地图将逐步收敛为可交付实现阶段的完整产品规格。
 
-应用外壳的命令面板另有一份地图：[命令面板 Wayfinder 地图](.scratch/command-palette/map.md)。已确认的方向是用**可配置的系统级全局热键**（默认 `Ctrl + Shift + K`）唤起命令面板，按名称包含匹配检索并执行跳转命令与动作命令。该决议把托盘与全局热键拉进范围，与 [issue 54](.scratch/folder-content-copy/issues/54-autostart-notification-and-global-hotkey.md) 的边界尚未划分；面板的呈现形态（独立窗口还是页内遮罩）也尚未确定，因此本文第 3 节关于快捷键作用域的表述在这些票据收敛后再同步更新。
+应用外壳的命令面板另有一份地图：[命令面板 Wayfinder 地图](.scratch/command-palette/map.md)。已确认的方向是用**可配置的系统级全局热键**（默认 `Ctrl + Shift + K`）唤起命令面板，按名称包含匹配检索并执行跳转命令与动作命令。该决议已全面收敛形成产品规格说明书 [spec.md](.scratch/command-palette/spec.md)：面板统一采用常驻后台的独立浮层窗口形态（Spotlight / Raycast 风格）；系统托盘与全局热键基础设施归本命令面板 effort 负责，现有 `Ctrl + Shift + C` 与 `Ctrl + F` 保持应用内生效；[issue 54](.scratch/folder-content-copy/issues/54-autostart-notification-and-global-hotkey.md) 收窄为开机自启与系统通知。

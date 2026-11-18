@@ -1,22 +1,25 @@
 # 16：面板的位置、尺寸、多显示器与 DPI
 
 Type: grilling
-Status: open
-Label: needs-triage
-Blocked by: 10
+Status: resolved
+Label: ready-for-agent
 
-## 问题
+## 决议
 
-页内遮罩形态下，面板在窗口内居中即可（现有弹窗都是 `flex items-center justify-center`）。但独立窗口形态需要决定它在**屏幕**上的位置：
-
-- **位置**：屏幕正中，还是水平居中、垂直偏上（Spotlight / Raycast 风格，约屏幕高度 20–25% 处）？
-- **多显示器**：跟随**鼠标所在屏**、**当前焦点窗口所在屏**，还是固定在主屏？
-- **尺寸**：固定宽度（如 640–720px）还是按屏宽比例？高度随结果数增长到上限后滚动，还是固定高度？
-- **DPI 缩放**：Tauri 的逻辑像素与物理像素在混合 DPI 多屏下的定位坑。
-- **结果列表最大高度**与滚动条样式（项目已有 `.fd-command-scroll` 自定义滚动条先例，见 [`index.css`](../../../src/index.css)）。
-- 页内遮罩形态下，**窄窗口**（项目断点 1024px，见 [folder-content-copy issue 55](../../folder-content-copy/issues/55-narrow-viewport-auto-switch.md)）时面板宽度如何收缩。
+1. **屏幕定位与偏上布局**：
+   - 窗口位置采用**水平居中、垂直居中偏上**（位于所在屏幕垂直高度的 20%~25% 黄金视线区，Spotlight / Raycast 标准视觉定位）。
+2. **多显示器跟随策略**：
+   - 唤起命令面板时，通过 Tauri 原生接口检测当前**鼠标光标所在的显示器**（Cursor Position Monitor）；
+   - 在该显示器的有效工作区（排除任务栏）内计算居中偏上坐标并展示，确保在用户正在视线注视与操作的屏幕上就近呼出。
+3. **尺寸与自适应高度**：
+   - **宽度**：固定为 640px（逻辑像素）；
+   - **高度**：根据列表结果数量自适应收缩；空状态或仅少量结果时紧凑包裹；
+   - **最大高度**：上限设为 420px，超出时在结果列表容器内部滚动；
+   - **滚动条**：复用项目既有的 `.fd-command-scroll` 自定义紧凑滚动条样式。
+4. **DPI 与透明度**：
+   - 窗口配置 `transparent: true` 与 `decorations: false`；
+   - 由 Tauri Webview 处理系统 DPI 缩放，配合外层 CSS 圆角 `rounded-xl` 与投影 `shadow-2xl`，在各缩放比例下保持边缘平滑。
 
 ## Comments
 
-- 2026-11-13：grilling 第一轮时列为下游问题，未及提问。用户外出，留待下次讨论。
-- 若 issue 10 选择「统一为页内遮罩」，多显示器与 DPI 部分作废，其余仍需定。
+- 2026-11-18：用户在 Grilling 第三轮确认本决议。

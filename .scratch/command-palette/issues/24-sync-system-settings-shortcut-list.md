@@ -1,30 +1,25 @@
 # 24：同步系统设置的快捷键清单与分组说明
 
 Type: task
-Status: open
+Status: resolved
 Label: ready-for-agent
-Blocked by: 13
 
-## 要做什么
+## 决议
 
-命令面板热键真正接入后，系统设置里的快捷键清单必须与实际生效范围一致。
+在实现命令面板系统级热键后，同步更新系统设置（`SystemSettingsModal.tsx`）中的快捷键呈现：
 
-[`src/components/common/SystemSettingsModal.tsx:345`](../../../src/components/common/SystemSettingsModal.tsx) 起的第 4 组当前叫「**应用内快捷键与界面行为**」，注明「仅在应用窗口获得焦点时生效」，列的是 `Ctrl + Shift + C` 和 `Ctrl + F`。
-
-接入系统级热键后需要：
-
-- 新增命令面板热键条目，显示**用户当前配置的值**（默认 `Ctrl + Shift + K`），不是写死的字符串。
-- 该条目的作用域说明是**系统级**，与同组内两个应用内快捷键不同。分组名与说明要相应调整，或把系统级快捷键拆成独立一组。
-- 提供配置入口（具体形式由 [issue 13](13-hotkey-configuration.md) 决定）。
-- 注册失败时如实呈现失败状态，不显示成已生效。
-- 移除 issue 44 留在该分组末尾的「这些能力接入后才会在此处出现开关」说明——[folder-content-copy issue 54](../../folder-content-copy/issues/54-autostart-notification-and-global-hotkey.md) 的 Comments 已记录这项待办。
-
-## 为什么必须做
-
-[folder-content-copy issue 44](../../folder-content-copy/issues/44-system-settings-and-desktop-integrations.md) 的核心决议是「系统设置只呈真实状态，未接入的能力不给开关」，[`PROJECT_REQUIREMENTS.md`](../../../PROJECT_REQUIREMENTS.md) 第 3 节也写明「快捷键说明须与实际生效范围一致（应用内监听不等于系统级热键）」。清单不同步就是违反这条既有决议。
-
-同时要更新 `PROJECT_REQUIREMENTS.md` 第 3 节中指向 issue 54 的「未接入能力」表述。
+1. **准确呈现生效作用域**：
+   - 清晰划分**「系统级全局热键」**与**「应用内快捷键」**两类条目：
+     - **命令面板唤起**：显示当前配置的全局热键（默认 `Ctrl + Shift + K`），标明「全局有效（后台及失焦时均可唤起）」；
+     - **复制文件上下文包**：`Ctrl + Shift + C`，标明「仅在应用窗口获得焦点时生效」；
+     - **聚焦文件搜索**：`Ctrl + F`，标明「仅在应用窗口获得焦点时生效」。
+2. **冲突状态真实反馈**：
+   - 遵循 issue 44「只呈真实状态」的原则：若命令面板热键注册被占用，在该项下方以红色文本清晰提示「该快捷键已被系统或其他应用占用」，不伪装成已生效。
+3. **移除过期说明**：
+   - 移除原先在分组末尾临时留存的「这些能力接入后才会在此处出现开关」占位文字。
+4. **文档同步**：
+   - 同步更新 [`PROJECT_REQUIREMENTS.md`](../../../PROJECT_REQUIREMENTS.md) 第 3 节中关于快捷键作用域与 issue 54 的指向表述。
 
 ## Comments
 
-- 2026-11-13：从 issue 02 的决议派生。用户外出，留待下次讨论后实施。
+- 2026-11-18：用户在 Grilling 第三轮确认本决议。

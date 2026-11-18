@@ -11,6 +11,8 @@
 
 涉及项目背景、产品需求或设计决定时，先阅读 [`PROJECT_REQUIREMENTS.md`](./PROJECT_REQUIREMENTS.md)。
 
+### 本项目前端包管理工具使用bun而非 npm/pnpm.
+
 ## 工程 Skills
 
 ### 问题跟踪器

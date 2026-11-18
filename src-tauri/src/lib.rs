@@ -1,13 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
+use tauri::menu::{MenuBuilder, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod context_package;
 mod history_store;
 mod search;
 
 const DEFAULT_ROUTE: &str = "/folder-copy";
+/// 命令面板全局热键（Ctrl+Shift+K）
+const PALETTE_SHORTCUT: &str = "Ctrl+Shift+K";
+
+/// 全局热键注册状态，通过 Mutex 共享给 command 查询
+struct ShortcutStatus {
+    registered: bool,
+    error: Option<String>,
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +165,80 @@ fn parse_activation_args(args: impl IntoIterator<Item = String>) -> ActivationRe
 #[tauri::command]
 fn initial_activation(request: State<'_, ActivationRequest>) -> ActivationRequest {
     request.inner().clone()
+}
+
+/// 计算命令面板在目标显示器上的居中偏上位置，然后显示并聚焦。
+/// 策略：获取当前光标坐标 → 找包含该坐标的显示器 → 居中 X，Y 位于工作区顶部 20%。
+fn show_palette_window(app: &tauri::AppHandle) -> Result<(), String> {
+    let palette = app
+        .get_webview_window("command-palette")
+        .ok_or("找不到命令面板窗口")?;
+
+    // 窗口尺寸（固定 640px 宽；高度由前端内容决定，这里用当前值）
+    let win_size = palette.outer_size().map_err(|e| e.to_string())?;
+    let win_w = win_size.width;
+    let _win_h = win_size.height;
+
+    // 获取所有显示器
+    let monitors = app.available_monitors().map_err(|e| e.to_string())?;
+
+    // 获取鼠标当前位置
+    let cursor = app.cursor_position().ok();
+
+    // 找到鼠标所在显示器，回退到主显示器
+    let target_monitor = cursor
+        .as_ref()
+        .and_then(|pos| {
+            monitors.iter().find(|m| {
+                let mp = m.position();
+                let ms = m.size();
+                pos.x >= mp.x as f64
+                    && pos.x < (mp.x + ms.width as i32) as f64
+                    && pos.y >= mp.y as f64
+                    && pos.y < (mp.y + ms.height as i32) as f64
+            })
+        })
+        .or_else(|| monitors.first());
+
+    let (x, y) = if let Some(monitor) = target_monitor {
+        let mp = monitor.position();
+        let ms = monitor.size();
+        let center_x = mp.x + (ms.width as i32 - win_w as i32) / 2;
+        let top_y = mp.y + (ms.height as i32) / 5; // 约 20% 处
+        (center_x, top_y)
+    } else {
+        (100, 100)
+    };
+
+    palette
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
+        .map_err(|e| e.to_string())?;
+    palette.show().map_err(|e| e.to_string())?;
+    palette.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn show_palette(app: tauri::AppHandle) -> Result<(), String> {
+    show_palette_window(&app)
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutStatusInfo {
+    shortcut: String,
+    registered: bool,
+    error: Option<String>,
+}
+
+#[tauri::command]
+fn get_shortcut_status(state: State<'_, Mutex<ShortcutStatus>>) -> ShortcutStatusInfo {
+    let s = state.lock().unwrap();
+    ShortcutStatusInfo {
+        shortcut: PALETTE_SHORTCUT.to_string(),
+        registered: s.registered,
+        error: s.error.clone(),
+    }
 }
 
 pub(crate) fn user_error(action: &str, path: &Path, error: impl std::fmt::Display) -> String {
@@ -498,6 +584,10 @@ async fn list_selectable_files(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_request = parse_activation_args(std::env::args().skip(1));
+    let shortcut_status = Mutex::new(ShortcutStatus {
+        registered: false,
+        error: None,
+    });
     let migrations = vec![
         tauri_plugin_sql::Migration {
             version: 1,
@@ -523,6 +613,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(initial_request)
+        .manage(shortcut_status)
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:settings.db", migrations)
@@ -541,8 +633,121 @@ pub fn run() {
             let _ = app.emit("activation-request", request);
         }))
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == "main" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+                tauri::WindowEvent::Focused(false) => {
+                    if window.label() == "command-palette" {
+                        let _ = window.hide();
+                    }
+                }
+                _ => {}
+            }
+        })
+        .setup(|app| {
+            let show_main = MenuItem::with_id(app, "show_main", "显示主窗口", true, None::<&str>)?;
+            let command_palette = MenuItem::with_id(app, "command_palette", "命令面板", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+
+            let tray_menu = MenuBuilder::new(app)
+                .items(&[&show_main, &command_palette, &separator, &quit])
+                .build()?;
+
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray")
+                .tooltip("KeyboardCommand")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show_main" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "command_palette" => {
+                            let _ = show_palette_window(app);
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            tray_builder.build(app)?;
+
+            // 注册全局热键 Ctrl+Shift+K → Toggle 命令面板
+            let shortcut: Shortcut = PALETTE_SHORTCUT
+                .parse()
+                .expect("PALETTE_SHORTCUT 格式有误");
+
+            let register_result = app.global_shortcut().on_shortcut(shortcut, {
+                let app_handle = app.handle().clone();
+                move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(palette) = app_handle.get_webview_window("command-palette") {
+                            if palette.is_visible().unwrap_or(false) {
+                                let _ = palette.hide();
+                            } else {
+                                let _ = show_palette_window(&app_handle);
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 记录注册结果供前端查询
+            if let Some(status) = app.try_state::<Mutex<ShortcutStatus>>() {
+                let mut s = status.lock().unwrap();
+                match register_result {
+                    Ok(_) => {
+                        s.registered = true;
+                        s.error = None;
+                    }
+                    Err(e) => {
+                        s.registered = false;
+                        s.error = Some(e.to_string());
+                    }
+                }
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             initial_activation,
+            show_palette,
+            get_shortcut_status,
             load_directory_tree,
             load_directory_page,
             list_selectable_files,

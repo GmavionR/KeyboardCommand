@@ -1,28 +1,29 @@
 # 12：托盘语义与主窗口关闭行为
 
 Type: grilling
-Status: open
-Label: needs-triage
-Blocked by: 09
+Status: resolved
+Label: ready-for-agent
 
-## 问题
+## 决议
 
-[issue 02](02-system-hotkey-and-invocation.md) 的场景 1 前提是「应用只隐藏在系统托盘」，但**当前应用没有托盘实现**（[folder-content-copy issue 54](../../folder-content-copy/issues/54-autostart-notification-and-global-hotkey.md) 已记录这一事实）。用户要怎么进入这个状态？
+采用 Windows 桌面效率工具的标准托盘行为模式：
 
-需要定：
-
-- **关闭主窗口（点 X）= 隐藏到托盘，还是退出应用？** 这是托盘应用最关键的一条语义，且会改变现有行为。
-- 若 X = 隐藏，**如何真正退出**？托盘菜单的「退出」项？
-- **托盘图标左键 / 双击**分别做什么：显示主窗口、唤起命令面板、还是弹菜单？
-- **托盘菜单包含哪些项**：显示主窗口、命令面板、各功能路径直达、退出？
-- 首次启动是否显示主窗口，还是直接进托盘？（与 issue 54 的「开机自启驻留托盘」相关）
-- 隐藏到托盘时**前端是否继续运行**？这影响热键响应路径与状态保持。
-- 托盘图标资源从哪来，是否需要明暗两套。
-
-## 与既有票据的关系
-
-issue 54 的待明确项里已经有「自启是开机后驻留托盘还是打开主窗口——当前应用没有托盘实现，选前者要先补托盘」。本票是那条的具体化。两者的边界划分见 [issue 14](14-scope-boundary-with-issue-54.md)，避免两边各做一半托盘。
+1. **主窗口点 × = 隐藏到系统托盘**：
+   - 监听 Tauri 主窗口的 `WindowEvent::CloseRequested` 事件，调用 `api.prevent_close()` 拦截窗口销毁，并调用 `window.hide()` 将其隐藏。
+   - 应用主进程及后台服务保持运行，全局热键继续有效。
+2. **彻底退出途径**：
+   - 仅能通过托盘图标右键菜单中的「退出」项（调用 `app.exit(0)`）彻底关闭退出应用程序。
+3. **托盘鼠标左键单击行为**：
+   - 单击系统托盘图标：若主窗口已显示且在前台，则隐藏；若主窗口隐藏或在后台，则执行 `window.show()` + `window.unminimize()` + `window.set_focus()` 将主窗口激活到前台。
+4. **托盘右键上下文菜单**：
+   - 提供标准菜单项：
+     - 「显示主窗口」
+     - 「命令面板」（点击可直接唤出命令面板窗口）
+     - 分隔线
+     - 「退出」
+5. **技术选型**：
+   - 使用 Tauri 2 原生内置的 `tauri::tray::TrayIconBuilder` 与 `tauri::menu::MenuBuilder`，零新增外部第三方 Rust 依赖。
 
 ## Comments
 
-- 2026-11-13：从 issue 02 的用户答复中拆出。用户外出，留待下次讨论。
+- 2026-11-18：用户在 Grilling 第二轮明确确认本决议。
