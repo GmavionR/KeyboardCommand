@@ -50,13 +50,13 @@ Status: resolved
 
 规格确认后按「示踪弹垂直切片」拆解为 9 张实现工单，实时状态见 [`spec.md`](spec.md) 中的实施任务进度矩阵：
 
-25. [系统托盘常驻与主窗口关闭拦截隐藏](issues/25-tray-and-close-to-hide.md)（Blocked by: 无）
-26. [现有搜索框输入法组字守卫修复](issues/26-fix-ime-composition-guard.md)（Blocked by: 无）
-27. [独立面板 Webview 窗口创建与失焦隐藏生命周期](issues/27-standalone-palette-window.md)（Blocked by: 25）
-28. [系统级全局热键注册与系统设置呈现](issues/28-global-shortcut-and-settings.md)（Blocked by: 27）
-29. [全局 ThemeProvider 提升与跨窗口实时双向主题同步](issues/29-global-theme-elevation-and-sync.md)（Blocked by: 27）
-30. [可扩展命令注册表与路由单一来源架构](issues/30-extensible-command-registry.md)（Blocked by: 29）
-31. [命令面板核心交互与 cmdk 界面呈现](issues/31-palette-cmdk-ui.md)（Blocked by: 30）
-32. [「打开文件夹...」与跳转命令跨页面联动执行](issues/32-open-folder-cross-page-dispatch.md)（Blocked by: 31）
-33. [端到端集成与桌面多场景验证](issues/33-e2e-integration-and-verification.md)（Blocked by: 26, 28, 32）
+25. ✅ [系统托盘常驻与主窗口关闭拦截隐藏](issues/25-tray-and-close-to-hide.md)（Blocked by: 无）
+26. ✅ [现有搜索框输入法组字守卫修复](issues/26-fix-ime-composition-guard.md)（Blocked by: 无）
+27. ✅ [独立面板 Webview 窗口创建与失焦隐藏生命周期](issues/27-standalone-palette-window.md)（Blocked by: 25）
+28. ✅ [系统级全局热键注册与系统设置呈现](issues/28-global-shortcut-and-settings.md)（Blocked by: 27）
+29. ✅ [全局 ThemeProvider 提升与跨窗口实时双向主题同步](issues/29-global-theme-elevation-and-sync.md)（Blocked by: 27）
+30. ✅ [可扩展命令注册表与路由单一来源架构](issues/30-extensible-command-registry.md)（Blocked by: 29）
+31. ✅ [命令面板核心交互与 cmdk 界面呈现](issues/31-palette-cmdk-ui.md)（Blocked by: 30）
+32. ✅ [「打开文件夹...」与跳转命令跨页面联动执行](issues/32-open-folder-cross-page-dispatch.md)（Blocked by: 31）
+33. ✅ [端到端集成与桌面多场景验证](issues/33-e2e-integration-and-verification.md)（Blocked by: 26, 28, 32）
 

@@ -223,6 +223,19 @@ fn show_palette(app: tauri::AppHandle) -> Result<(), String> {
     show_palette_window(&app)
 }
 
+/// 激活主窗口到前台（show + unminimize + set_focus）。
+/// 由命令面板的 activateMainWindow / navigate 执行上下文调用。
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("找不到主窗口")?;
+    window.show().map_err(|e| e.to_string())?;
+    window.unminimize().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutStatusInfo {
@@ -747,6 +760,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             initial_activation,
             show_palette,
+            show_main_window,
             get_shortcut_status,
             load_directory_tree,
             load_directory_page,

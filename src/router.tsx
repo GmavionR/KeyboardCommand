@@ -13,16 +13,30 @@ import {
 } from "./activation";
 import { FolderCopyPage } from "./App";
 import { CommandPalette } from "./components/palette/CommandPalette";
+import { SystemSettingsModal } from "./components/common/SystemSettingsModal";
+import {
+  closeSystemSettings,
+  getSystemSettingsOpen,
+  subscribeSystemSettings,
+} from "./commands/dispatcher";
 
 function RootLayout() {
   const notice = useSyncExternalStore(
     subscribeActivationNotice,
     getActivationNotice,
   );
+  const isSystemSettingsOpen = useSyncExternalStore(
+    subscribeSystemSettings,
+    getSystemSettingsOpen,
+  );
 
   return (
     <>
       <Outlet />
+      <SystemSettingsModal
+        isOpen={isSystemSettingsOpen}
+        onClose={closeSystemSettings}
+      />
       {notice && (
         <div
           role="alert"

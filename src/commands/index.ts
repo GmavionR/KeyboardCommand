@@ -20,6 +20,7 @@ export { builtinRouteProvider } from './providers/builtinRouteProvider';
 export { folderCopyProvider, OPEN_FOLDER_EVENT } from './providers/folderCopyProvider';
 export { createAppearanceProvider } from './providers/appearanceProvider';
 export { settingsProvider, OPEN_SYSTEM_SETTINGS_EVENT, OPEN_PAGE_SETTINGS_EVENT } from './providers/settingsProvider';
+export * from './dispatcher';
 
 import { CommandRegistry } from './registry';
 import { builtinRouteProvider } from './providers/builtinRouteProvider';

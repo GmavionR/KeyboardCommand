@@ -239,13 +239,13 @@ KeyboardCommand（KbcApp）是一款面向 Windows 的键盘效率工具，随�
 | :--- | :--- | :--- | :--- | :--- |
 | [25](issues/25-tray-and-close-to-hide.md) | 系统托盘常驻与主窗口关闭拦截隐藏 | `resolved` | 无 | 托盘图标、左键显隐、右键退出菜单、拦截 × 隐藏到托盘 |
 | [26](issues/26-fix-ime-composition-guard.md) | 现有搜索框输入法组字守卫修复 | `resolved` | 无 | SearchBar 及相关输入框补齐 `isComposing` 守卫，杜绝打字误选 |
-| [27](issues/27-standalone-palette-window.md) | 独立面板 Webview 窗口与失焦隐藏生命周期 | `ready-for-agent` | 25 | 预创建透明 Webview、鼠标多屏居中偏上定位、失焦/Esc 自动隐藏 |
-| [28](issues/28-global-shortcut-and-settings.md) | 系统级全局热键注册与系统设置呈现 | `ready-for-agent` | 27 | 官方插件注册 `Ctrl+Shift+K`、Toggle 机制、系统设置区分作用域与标红 |
+| [27](issues/27-standalone-palette-window.md) | 独立面板 Webview 窗口与失焦隐藏生命周期 | `resolved` | 25 | 预创建透明 Webview、鼠标多屏居中偏上定位、失焦/Esc 自动隐藏 |
+| [28](issues/28-global-shortcut-and-settings.md) | 系统级全局热键注册与系统设置呈现 | `resolved` | 27 | 官方插件注册 `Ctrl+Shift+K`、Toggle 机制、系统设置区分作用域与标红 |
 | [29](issues/29-global-theme-elevation-and-sync.md) | 全局 ThemeProvider 提升与跨窗口实时双向主题同步 | `resolved` | 27 | Provider 提升至根布局、多 Webview 事件广播秒级主题同步 |
 | [30](issues/30-extensible-command-registry.md) | 可扩展命令注册表与路由单一来源架构 | `resolved` | 29 | 路由单一元数据清单、`CommandItem` 契约抽象、预留用户自定义 Provider |
-| [31](issues/31-palette-cmdk-ui.md) | 命令面板核心交互与 cmdk 界面呈现 | `ready-for-agent` | 30 | cmdk 引入、大小写不敏感包含检索、琥珀色高亮、四段固定分类、清理死类 |
-| [32](issues/32-open-folder-cross-page-dispatch.md) | 「打开文件夹...」与跳转命令跨页面联动执行 | `ready-for-agent` | 31 | 跳转置前激活、打开文件夹跨页调度自动切至 `/folder-copy` 并弹选择框 |
-| [33](issues/33-e2e-integration-and-verification.md) | 端到端集成与桌面多场景验证 | `ready-for-agent` | 26, 28, 32 | 12 条用户故事桌面真机回归、高 DPI 多屏验证、Rust/TS 全编译通过 |
+| [31](issues/31-palette-cmdk-ui.md) | 命令面板核心交互与 cmdk 界面呈现 | `resolved` | 30 | cmdk 引入、大小写不敏感包含检索、琥珀色高亮、四段固定分类、清理死类 |
+| [32](issues/32-open-folder-cross-page-dispatch.md) | 「打开文件夹...」与跳转命令跨页面联动执行 | `resolved` | 31 | 跳转置前激活、打开文件夹跨页调度自动切至 `/folder-copy` 并弹选择框 |
+| [33](issues/33-e2e-integration-and-verification.md) | 端到端集成与桌面多场景验证 | `resolved` | 26, 28, 32 | 12 条用户故事桌面真机回归、高 DPI 多屏验证、Rust/TS 全编译通过 |
 
 ## 关联文档与事实来源
 

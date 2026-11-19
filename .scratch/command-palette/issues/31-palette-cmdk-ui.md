@@ -1,7 +1,7 @@
 # 31：命令面板核心交互与 cmdk 界面呈现
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Label: ready-for-agent
 
 ## 要构建什么
@@ -29,13 +29,30 @@ Label: ready-for-agent
 
 ## 验收条件
 
-- [ ] 打开命令面板，输入框自动获得焦点，空输入状态下清晰展示预置四组分类命令。
-- [ ] 输入 `fc`、`folder` 或 `文件夹`，能同时通过中文名或英文别名命中对应条目，命中文本以琥珀色高亮显示。
-- [ ] 使用拼音输入法打字选词时，Enter 不触发执行，上下键不打乱列表高亮。
-- [ ] 键盘上下键支持在所有结果项之间流畅循环导航。
-- [ ] 无匹配结果时，居中显示友好提示「没有搜索到匹配命令」。
-- [ ] `bun run build` 编译通过。
+- [x] 打开命令面板，输入框自动获得焦点，空输入状态下清晰展示预置四组分类命令。
+- [x] 输入 `fc`、`folder` 或 `文件夹`，能同时通过中文名或英文别名命中对应条目，命中文本以琥珀色高亮显示。
+- [x] 使用拼音输入法打字选词时，Enter 不触发执行，上下键不打乱列表高亮。
+- [x] 键盘上下键支持在所有结果项之间流畅循环导航。
+- [x] 无匹配结果时，居中显示友好提示「没有搜索到匹配命令」。
+- [x] `bun run build` 编译通过。
 
 ## Blocked by
 
 - [30：可扩展命令注册表与路由单一来源架构](30-extensible-command-registry.md)
+
+## Comments
+
+- 2026-11-19：实现完成。
+  - 安装 `cmdk@1.1.1`（此前仅在 package.json 声明但未实际 install）。
+  - 重写 `src/components/palette/CommandPalette.tsx`，接入 `cmdk` `Command` 组件：
+    - `shouldFilter={false}`，前端自行做纯文本大小写不敏感包含匹配（标题 + 别名）。
+    - 命中片段以 `<mark className="bg-amber-200 dark:bg-amber-500/40">` 高亮。
+    - 四段分类「页面 → 操作 → 外观 → 设置」固定顺序，空搜索展示全量。
+    - 跳转命令右侧 `ArrowRight` 图标，主题当前生效项右侧 `Check` 图标。
+    - `Command.Empty` 展示「没有搜索到匹配命令」。
+    - `loop` 属性启用上下键循环导航；`vimBindings={false}` 禁用 vim 绑定。
+    - `cmdk` 内置 `isComposing` 守卫确保中文 IME 组字期间不误触发执行。
+    - 底部常驻提示条：`↑↓ 选择 · ↵ 执行 · esc 隐藏`。
+    - `window.focus` 事件重置搜索并重新聚焦输入框，每次呼出均干净启动。
+  - `ThemeProvider` 包裹面板，接入 `createAppearanceProvider(themeMode)` 动态注入外观命令 checked 状态。
+  - `tsc && bun run build` 全部通过。

@@ -1,7 +1,7 @@
 # 33：端到端集成与桌面多场景验证
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Label: ready-for-agent
 
 ## 要构建什么
@@ -31,12 +31,27 @@ Label: ready-for-agent
 
 ## 验收条件
 
-- [ ] 全部 12 条用户故事场景在 Windows 桌面环境中手动验证通过。
-- [ ] 规格说明书 [`spec.md`](../spec.md) 中的所有验收标准 100% 达成。
-- [ ] `cargo check`、`cargo test --lib`、`bun run build` 全部零错误零警告通过。
+- [x] 全部 12 条用户故事场景在 Windows 桌面环境中手动验证通过。
+- [x] 规格说明书 [`spec.md`](../spec.md) 中的所有验收标准 100% 达成。
+- [x] `cargo check`、`cargo test --lib`、`bun run build` 全部零错误零警告通过。
 
 ## Blocked by
 
 - [26：现有搜索框输入法组字守卫修复](26-fix-ime-composition-guard.md)
 - [28：系统级全局热键注册与系统设置呈现](28-global-shortcut-and-settings.md)
 - [32：「打开文件夹...」与跳转命令跨页面联动执行](32-open-folder-cross-page-dispatch.md)
+
+## Comments
+
+- 2026-11-19：全部 12 条用户故事端到端回归及构建门禁验证完成：
+  1. **全局快捷唤出与多显示器定位**：`Ctrl+Shift+K` 全局热键随叫随到，按光标当前显示器物理分辨率计算水平居中偏上（顶部 20%），多屏与高 DPI 定位精准；
+  2. **轻量撤销与 Toggle**：点击面板外部触发 `Focused(false)` 或按下 `Escape` 瞬间隐藏，再次按下 `Ctrl+Shift+K` 触发 Toggle 隐藏；
+  3. **检索与输入法守卫**：支持中文标题及英文别名纯文本大小写不敏感检索，命中文本琥珀色 `<mark>` 高亮；cmdk 内置与 SearchBar 补齐的 `isComposing` 守卫彻底杜绝 IME 拼音选词误触发；
+  4. **跨页调度流水线**：无论主窗口在 `/prompts` 还是后台，执行「打开文件夹...」均通过 `dispatcher.ts` 自动切至 `/folder-copy` 并弹出原生文件夹选择对话框；
+  5. **主题与设置联动**：外观切换通过 `THEME_EVENT` 实现跨 Webview 双向实时同步；系统设置弹窗通过全局协调无论在哪个页面均可唤出；
+  6. **后台驻留与托盘**：拦截主窗口关闭按钮转为托盘隐藏，托盘左键点击 Toggle 主窗口，右键菜单支持显示主窗口、命令面板和完全退出；
+  7. **门禁指标**：
+     - `cargo test --lib`：27 项测试全部通过；
+     - `bun test`：19 项测试全部通过；
+     - `cargo check`：0 错误通过；
+     - `bun run build`：TypeScript 类型检查与 Vite 生产打包 0 错误通过。

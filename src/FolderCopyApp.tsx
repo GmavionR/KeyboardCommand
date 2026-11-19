@@ -30,7 +30,11 @@ import {
   normalizeFolderPath,
 } from './utils/treeUtils';
 import { TitleBar } from './components/common/TitleBar';
-import { SystemSettingsModal } from './components/common/SystemSettingsModal';
+import {
+  registerOpenFolderHandler,
+  registerOpenPageSettingsHandler,
+  openSystemSettings,
+} from './commands/dispatcher';
 import { TopToolbar } from './components/folder-copy/TopToolbar';
 import { SearchBar } from './components/folder-copy/SearchBar';
 import { FileTree } from './components/folder-copy/FileTree';
@@ -159,7 +163,6 @@ export default function App() {
 
   // Modals & Dialogs
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Page rules settings (whitelist, exclusions, etc.)
-  const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false); // Global system settings (theme, updates, SQLite, etc.)
   const [isFailureDialogOpen, setIsFailureDialogOpen] = useState(false);
   const [failureList, setFailureList] = useState<CopyFailureDetail[]>([]);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -678,6 +681,22 @@ export default function App() {
     }
   };
 
+  const openFolderDialogRef = useRef(handleOpenFolderDialog);
+  openFolderDialogRef.current = handleOpenFolderDialog;
+
+  const openSettingsRef = useRef(handleOpenSettings);
+  openSettingsRef.current = handleOpenSettings;
+
+  // 跨页调度：通过 dispatcher 注册打开文件夹和打开功能设置回调，支持消费 pending action
+  useEffect(() => {
+    const unregisterFolder = registerOpenFolderHandler(() => openFolderDialogRef.current());
+    const unregisterPageSettings = registerOpenPageSettingsHandler(() => openSettingsRef.current());
+    return () => {
+      unregisterFolder();
+      unregisterPageSettings();
+    };
+  }, []);
+
   const handleRefreshFolder = (targetPath: string) => {
     loadFolder(targetPath.trim() || currentPath);
   };
@@ -940,7 +959,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans antialiased selection:bg-blue-600 selection:text-white transition-colors duration-150">
       {/* 1. Windows Native Title Bar: Native window title + Global System Settings button beside Minimize */}
-      <TitleBar onOpenSettings={() => setIsSystemSettingsOpen(true)} />
+      <TitleBar onOpenSettings={openSystemSettings} />
 
       {/* 2. Top Utility Bar: Navigation Bar & Combobox (地址输入框在左，选择文件夹、重新载入、规则设置在输入框右侧) */}
       <TopToolbar
@@ -1176,12 +1195,6 @@ export default function App() {
         settingsLoadError={settingsLoadError}
         onRetryLoadSettings={handleLoadSettings}
         isSqliteSaving={isSettingsSaving}
-      />
-
-      {/* 6.1 Global System Settings Modal: Theme, Software Updates, SQLite Status, System Shortcuts */}
-      <SystemSettingsModal
-        isOpen={isSystemSettingsOpen}
-        onClose={() => setIsSystemSettingsOpen(false)}
       />
 
       {/* 7. Copy Failure Dialog: Lists Failed File Paths and Reasons, Retains Selections */}

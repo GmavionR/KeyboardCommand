@@ -1,7 +1,7 @@
 # 32：「打开文件夹...」与跳转命令跨页面联动执行
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Label: ready-for-agent
 
 ## 要构建什么
@@ -29,12 +29,25 @@ Label: ready-for-agent
 
 ## 验收条件
 
-- [ ] 在 `/prompts` 页面时，呼出命令面板回车执行「打开文件夹内容复制」，主窗口顺利切到 `/folder-copy` 并激活到前台。
-- [ ] 无论主窗口处于哪个页面，呼出命令面板回车执行「打开文件夹...」，面板立即消失，主窗口置前切至 `/folder-copy`，并自动弹出文件夹选择对话框。
-- [ ] 选定文件夹后，文件树自动刷新展示选定项目的内容，最近文件夹更新。
-- [ ] 呼出命令面板回车执行「外观：深色模式」，面板收起，深色模式立即生效。
-- [ ] `bun run build` 编译通过。
+- [x] 在 `/prompts` 页面时，呼出命令面板回车执行「打开文件夹内容复制」，主窗口顺利切到 `/folder-copy` 并激活到前台。
+- [x] 无论主窗口处于哪个页面，呼出命令面板回车执行「打开文件夹...」，面板立即消失，主窗口置前切至 `/folder-copy`，并自动弹出文件夹选择对话框。
+- [x] 选定文件夹后，文件树自动刷新展示选定项目的内容，最近文件夹更新。
+- [x] 呼出命令面板回车执行「外观：深色模式」，面板收起，深色模式立即生效。
+- [x] `bun run build` 编译通过。
 
 ## Blocked by
 
 - [31：命令面板核心交互与 cmdk 界面呈现](31-palette-cmdk-ui.md)
+
+## Comments
+
+- 2026-11-19：实现完成。
+  - Rust 侧新增 `show_main_window` 命令（调用 `show() + unminimize() + set_focus()`），注册至 invoke handler；
+  - 前端建立 `src/commands/dispatcher.ts` 统一跨窗口/跨页面调度层：
+    - 主窗口启动时初始化 dispatcher，限制只有 `main` 窗口监听执行跨页 Action；
+    - 支持 `kbc://navigate` 路由导航；
+    - `dispatchOpenFolder()` 具备跨页智能流水线：若主窗口不在 `/folder-copy`，自动标记 `pendingOpenFolder` 并先导航至 `/folder-copy`，`FolderCopyApp` 挂载后立即消费触发 `dialog.open()` 原生文件夹选择框；用户选择文件夹后自动载入文件树并更新最近文件夹；
+    - `dispatchOpenPageSettings()` 具备跨页智能流水线：自动导航并唤起当前功能规则设置弹窗；
+    - `SystemSettingsModal` 提升至 `RootLayout` 全局状态管理，任何页面及命令面板均可呼出与关闭；
+  - 编写 `src/commands/dispatcher.test.ts` 覆盖跨页调度与契约校验；
+  - `bun test`（19 测试项全部通过）、`cargo test --lib`（27 测试项全部通过）、`bun run build` 与 `cargo check` 编译全部通过。
