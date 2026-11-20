@@ -82,3 +82,33 @@ export async function saveFolderCopySettings(settings: SettingsConfig): Promise<
     [JSON.stringify(parseSettings(settings))]
   );
 }
+
+interface AppSettingRow {
+  value: string;
+}
+
+export async function loadAppSetting(key: string, defaultValue: string): Promise<string> {
+  try {
+    const database = await getDatabase();
+    const rows = await database.select<AppSettingRow[]>(
+      'SELECT value FROM app_settings WHERE key = $1',
+      [key]
+    );
+    if (rows.length > 0 && rows[0].value) {
+      return rows[0].value;
+    }
+  } catch (error) {
+    console.warn(`读取设置项 ${key} 失败，使用默认值`, error);
+  }
+  return defaultValue;
+}
+
+export async function saveAppSetting(key: string, value: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute(
+    `INSERT INTO app_settings (key, value)
+     VALUES ($1, $2)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+}

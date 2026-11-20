@@ -15,7 +15,8 @@
         "title": "文件夹内容复制",
         "width": 1280,
         "height": 800,
-        "decorations": false
+        "decorations": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HideCursorWhileTyping"
       },
       {
         "label": "command-palette",
@@ -29,7 +30,8 @@
         "alwaysOnTop": true,
         "resizable": false,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HideCursorWhileTyping"
       }
     ],
     "security": {

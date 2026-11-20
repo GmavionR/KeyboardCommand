@@ -59,4 +59,6 @@ Status: resolved
 31. ✅ [命令面板核心交互与 cmdk 界面呈现](issues/31-palette-cmdk-ui.md)（Blocked by: 30）
 32. ✅ [「打开文件夹...」与跳转命令跨页面联动执行](issues/32-open-folder-cross-page-dispatch.md)（Blocked by: 31）
 33. ✅ [端到端集成与桌面多场景验证](issues/33-e2e-integration-and-verification.md)（Blocked by: 26, 28, 32）
+34. ✅ [命令面板体验修订：热键自定义、弹窗 Esc、参考站点视觉与底部热键提示](issues/34-命令面板体验修订.md)（Blocked by: 无）
+35. ✅ [唤起瞬间空白抖动与原生文件夹对话框内指针消失](issues/35-唤起闪白抖动与对话框指针消失.md)（Blocked by: 无）
 

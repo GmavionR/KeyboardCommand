@@ -13,8 +13,11 @@ import {
   FolderArchive,
   Globe,
   CheckCircle,
+  Keyboard,
+  RotateCcw,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useTheme } from '../../context/ThemeContext';
 import { formatBytes } from '../../utils/treeUtils';
 import {
@@ -41,6 +44,23 @@ interface ShortcutStatusInfo {
   error: string | null;
 }
 
+/** 将浏览器 e.code 映射为 global-shortcut 插件可解析的主键名 */
+function mainKeyFromCode(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  const allowed = [
+    'Space', 'Enter', 'NumpadEnter', 'Tab', 'Backspace', 'Delete', 'Insert',
+    'Home', 'End', 'PageUp', 'PageDown',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash',
+    'Semicolon', 'Quote', 'Comma', 'Period', 'Slash', 'Backquote',
+  ];
+  if (allowed.includes(code)) return code;
+  if (/^Numpad[0-9]$/.test(code)) return code;
+  return null;
+}
+
 export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   isOpen,
   onClose,
@@ -56,6 +76,96 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [shortcutStatus, setShortcutStatus] = useState<ShortcutStatusInfo | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordHint, setRecordHint] = useState<string | null>(null);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
+
+  const applyShortcut = useCallback(async (shortcut: string) => {
+    setShortcutError(null);
+    try {
+      const info = await invoke<ShortcutStatusInfo>('update_palette_shortcut', { shortcut });
+      setShortcutStatus(info);
+    } catch (error: unknown) {
+      setShortcutError(String(error));
+    }
+  }, []);
+
+  const resetShortcut = useCallback(async () => {
+    setShortcutError(null);
+    setIsRecording(false);
+    setRecordHint(null);
+    try {
+      const info = await invoke<ShortcutStatusInfo>('reset_palette_shortcut');
+      setShortcutStatus(info);
+    } catch (error: unknown) {
+      setShortcutError(String(error));
+    }
+  }, []);
+
+  // 热键录制：捕获阶段拦截按键，组合键成立即提交，Esc 取消
+  useEffect(() => {
+    if (!isRecording) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        setIsRecording(false);
+        setRecordHint(null);
+        return;
+      }
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+      const mods: string[] = [];
+      if (e.ctrlKey) mods.push('Ctrl');
+      if (e.altKey) mods.push('Alt');
+      if (e.shiftKey) mods.push('Shift');
+      if (e.metaKey) mods.push('Super');
+      if (mods.length === 0) {
+        setRecordHint('需要至少一个修饰键（Ctrl / Alt / Shift / Win）');
+        return;
+      }
+      const main = mainKeyFromCode(e.code);
+      if (!main) {
+        setRecordHint('该按键不支持作为热键主键，请换一个');
+        return;
+      }
+      setIsRecording(false);
+      setRecordHint(null);
+      void applyShortcut([...mods, main].join('+'));
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [isRecording, applyShortcut]);
+
+  // Esc 关闭弹窗（录制热键时 Esc 优先取消录制，已 preventDefault）
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
+  // 其他窗口修改热键时同步状态
+  useEffect(() => {
+    if (!isOpen) return;
+    let unlisten: (() => void) | undefined;
+    void listen<ShortcutStatusInfo>('palette-shortcut-changed', ({ payload }) => {
+      setShortcutStatus(payload);
+    })
+      .then((fn) => { unlisten = fn; })
+      .catch(() => {});
+    return () => { unlisten?.(); };
+  }, [isOpen]);
+
+  // 关闭弹窗时退出录制态
+  useEffect(() => {
+    if (!isOpen) {
+      setIsRecording(false);
+      setRecordHint(null);
+    }
+  }, [isOpen]);
 
   const refreshStatus = useCallback(async () => {
     setIsRefreshing(true);
@@ -382,20 +492,73 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded border border-slate-300 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">
-                    Ctrl + Shift + K
-                  </span>
-                  {shortcutStatus ? (
-                    shortcutStatus.registered ? (
-                      <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-                    )
+                  {isRecording ? (
+                    <>
+                      <span className="px-2 py-1 rounded border border-dashed border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/40 font-mono text-[11px] text-blue-600 dark:text-blue-300 animate-pulse">
+                        按下新组合键…
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRecording(false);
+                          setRecordHint(null);
+                        }}
+                        className="px-2 py-1 rounded text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                      >
+                        取消
+                      </button>
+                    </>
                   ) : (
-                    <span className="text-[11px] text-slate-400">检测中…</span>
+                    <>
+                      <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded border border-slate-300 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200">
+                        {(shortcutStatus?.shortcut ?? 'Ctrl+Shift+K').split('+').join(' + ')}
+                      </span>
+                      {shortcutStatus ? (
+                        shortcutStatus.registered ? (
+                          <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                        )
+                      ) : (
+                        <span className="text-[11px] text-slate-400">检测中…</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRecording(true);
+                          setRecordHint(null);
+                          setShortcutError(null);
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] text-slate-700 dark:text-slate-200 cursor-pointer transition-colors"
+                      >
+                        <Keyboard className="w-3 h-3" />
+                        修改
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void resetShortcut()}
+                        title="恢复默认 Ctrl+Shift+K"
+                        className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
+              {/* 录制提示 */}
+              {isRecording && (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {recordHint ?? '同时按下修饰键与主键（如 Ctrl + Alt + P）；按 Esc 取消录制。'}
+                </div>
+              )}
+              {/* 修改失败提示 */}
+              {shortcutError && (
+                <div className="flex items-start space-x-2 text-rose-700 dark:text-rose-300 text-[11px] bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded border border-rose-200 dark:border-rose-800/60">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px text-rose-500" />
+                  <span>{shortcutError}</span>
+                </div>
+              )}
               {/* 冲突错误提示 */}
               {shortcutStatus && !shortcutStatus.registered && (
                 <div className="flex items-start space-x-2 text-rose-700 dark:text-rose-300 text-[11px] bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded border border-rose-200 dark:border-rose-800/60">

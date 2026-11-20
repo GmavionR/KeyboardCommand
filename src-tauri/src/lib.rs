@@ -12,11 +12,12 @@ mod history_store;
 mod search;
 
 const DEFAULT_ROUTE: &str = "/folder-copy";
-/// 命令面板全局热键（Ctrl+Shift+K）
-const PALETTE_SHORTCUT: &str = "Ctrl+Shift+K";
+/// 命令面板全局热键默认值（Ctrl+Shift+K）
+const PALETTE_SHORTCUT_DEFAULT: &str = "Ctrl+Shift+K";
 
 /// 全局热键注册状态，通过 Mutex 共享给 command 查询
 struct ShortcutStatus {
+    shortcut: String,
     registered: bool,
     error: Option<String>,
 }
@@ -244,14 +245,117 @@ pub struct ShortcutStatusInfo {
     error: Option<String>,
 }
 
+fn get_shortcut_file_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("palette_shortcut.txt"))
+}
+
+fn load_shortcut_from_disk(app: &tauri::AppHandle) -> String {
+    if let Some(path) = get_shortcut_file_path(app) {
+        if let Ok(content) = fs::read_to_string(path) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() && trimmed.parse::<Shortcut>().is_ok() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    PALETTE_SHORTCUT_DEFAULT.to_string()
+}
+
+fn save_shortcut_to_disk(app: &tauri::AppHandle, shortcut: &str) {
+    if let Some(path) = get_shortcut_file_path(app) {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(path, shortcut.trim());
+    }
+}
+
+fn handle_palette_toggle(app_handle: &tauri::AppHandle) {
+    if let Some(palette) = app_handle.get_webview_window("command-palette") {
+        if palette.is_visible().unwrap_or(false) {
+            let _ = palette.hide();
+        } else {
+            let _ = show_palette_window(app_handle);
+        }
+    }
+}
+
+fn apply_palette_shortcut(
+    app: &tauri::AppHandle,
+    status_state: &Mutex<ShortcutStatus>,
+    new_shortcut_str: &str,
+) -> Result<ShortcutStatusInfo, String> {
+    let parsed: Shortcut = new_shortcut_str
+        .parse()
+        .map_err(|e| format!("快捷键格式无效：{e}"))?;
+
+    let mut status = status_state.lock().unwrap();
+    let old_shortcut_str = status.shortcut.clone();
+
+    // 如果之前已注册，注销旧快捷键
+    if status.registered {
+        if let Ok(old_shortcut) = old_shortcut_str.parse::<Shortcut>() {
+            let _ = app.global_shortcut().unregister(old_shortcut);
+        }
+    }
+
+    let app_handle = app.clone();
+    let reg_result = app.global_shortcut().on_shortcut(parsed, move |_app, _shortcut, event| {
+        if event.state == ShortcutState::Pressed {
+            handle_palette_toggle(&app_handle);
+        }
+    });
+
+    let (registered, error) = match reg_result {
+        Ok(_) => {
+            save_shortcut_to_disk(app, new_shortcut_str);
+            (true, None)
+        }
+        Err(e) => {
+            let err_msg = format!("该快捷键已被系统或其他应用占用（{e}）");
+            (false, Some(err_msg))
+        }
+    };
+
+    status.shortcut = new_shortcut_str.to_string();
+    status.registered = registered;
+    status.error = error.clone();
+
+    let info = ShortcutStatusInfo {
+        shortcut: new_shortcut_str.to_string(),
+        registered,
+        error,
+    };
+
+    let _ = app.emit("palette-shortcut-changed", &info);
+    Ok(info)
+}
+
 #[tauri::command]
 fn get_shortcut_status(state: State<'_, Mutex<ShortcutStatus>>) -> ShortcutStatusInfo {
     let s = state.lock().unwrap();
     ShortcutStatusInfo {
-        shortcut: PALETTE_SHORTCUT.to_string(),
+        shortcut: s.shortcut.clone(),
         registered: s.registered,
         error: s.error.clone(),
     }
+}
+
+#[tauri::command]
+fn update_palette_shortcut(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<ShortcutStatus>>,
+    shortcut: String,
+) -> Result<ShortcutStatusInfo, String> {
+    apply_palette_shortcut(&app, &state, &shortcut)
+}
+
+#[tauri::command]
+fn reset_palette_shortcut(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<ShortcutStatus>>,
+) -> Result<ShortcutStatusInfo, String> {
+    apply_palette_shortcut(&app, &state, PALETTE_SHORTCUT_DEFAULT)
 }
 
 pub(crate) fn user_error(action: &str, path: &Path, error: impl std::fmt::Display) -> String {
@@ -598,6 +702,7 @@ async fn list_selectable_files(
 pub fn run() {
     let initial_request = parse_activation_args(std::env::args().skip(1));
     let shortcut_status = Mutex::new(ShortcutStatus {
+        shortcut: PALETTE_SHORTCUT_DEFAULT.to_string(),
         registered: false,
         error: None,
     });
@@ -618,6 +723,15 @@ pub fn run() {
                 path_key TEXT PRIMARY KEY,\
                 path TEXT NOT NULL,\
                 last_used_at INTEGER NOT NULL\
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 3,
+            description: "create_app_settings",
+            sql: "CREATE TABLE IF NOT EXISTS app_settings (\
+                key TEXT PRIMARY KEY,\
+                value TEXT NOT NULL\
             );",
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
@@ -720,39 +834,10 @@ pub fn run() {
 
             tray_builder.build(app)?;
 
-            // 注册全局热键 Ctrl+Shift+K → Toggle 命令面板
-            let shortcut: Shortcut = PALETTE_SHORTCUT
-                .parse()
-                .expect("PALETTE_SHORTCUT 格式有误");
-
-            let register_result = app.global_shortcut().on_shortcut(shortcut, {
-                let app_handle = app.handle().clone();
-                move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        if let Some(palette) = app_handle.get_webview_window("command-palette") {
-                            if palette.is_visible().unwrap_or(false) {
-                                let _ = palette.hide();
-                            } else {
-                                let _ = show_palette_window(&app_handle);
-                            }
-                        }
-                    }
-                }
-            });
-
-            // 记录注册结果供前端查询
+            // 读取已保存或默认的全局热键并注册（默认 Ctrl+Shift+K）
+            let initial_shortcut = load_shortcut_from_disk(app.handle());
             if let Some(status) = app.try_state::<Mutex<ShortcutStatus>>() {
-                let mut s = status.lock().unwrap();
-                match register_result {
-                    Ok(_) => {
-                        s.registered = true;
-                        s.error = None;
-                    }
-                    Err(e) => {
-                        s.registered = false;
-                        s.error = Some(e.to_string());
-                    }
-                }
+                let _ = apply_palette_shortcut(app.handle(), &status, &initial_shortcut);
             }
 
             Ok(())
@@ -762,6 +847,8 @@ pub fn run() {
             show_palette,
             show_main_window,
             get_shortcut_status,
+            update_palette_shortcut,
+            reset_palette_shortcut,
             load_directory_tree,
             load_directory_page,
             list_selectable_files,
@@ -890,5 +977,13 @@ mod tests {
         assert!(ignored);
         assert!(!excluded);
         assert!(excluded_reason.is_none());
+    }
+
+    #[test]
+    fn default_and_custom_shortcut_parsing() {
+        assert!(PALETTE_SHORTCUT_DEFAULT.parse::<Shortcut>().is_ok());
+        assert!("Ctrl+Shift+P".parse::<Shortcut>().is_ok());
+        assert!("Alt+Space".parse::<Shortcut>().is_ok());
+        assert!("invalid-shortcut-string".parse::<Shortcut>().is_err());
     }
 }

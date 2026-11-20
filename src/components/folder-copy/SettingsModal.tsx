@@ -101,6 +101,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setErrorDetails(null);
   }, [currentSettings, isOpen, isSettingsLoading, settingsLoadError]);
 
+  // Esc 关闭弹窗（输入法组字期间的 Esc 交给输入法，不关弹窗）
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   // Section 1: Whitelist operations
   const handleAddWhitelist = () => {
     const val = newWhitelistItem.trim();

@@ -246,6 +246,8 @@ KeyboardCommand（KbcApp）是一款面向 Windows 的键盘效率工具，随�
 | [31](issues/31-palette-cmdk-ui.md) | 命令面板核心交互与 cmdk 界面呈现 | `resolved` | 30 | cmdk 引入、大小写不敏感包含检索、琥珀色高亮、四段固定分类、清理死类 |
 | [32](issues/32-open-folder-cross-page-dispatch.md) | 「打开文件夹...」与跳转命令跨页面联动执行 | `resolved` | 31 | 跳转置前激活、打开文件夹跨页调度自动切至 `/folder-copy` 并弹选择框 |
 | [33](issues/33-e2e-integration-and-verification.md) | 端到端集成与桌面多场景验证 | `resolved` | 26, 28, 32 | 12 条用户故事桌面真机回归、高 DPI 多屏验证、Rust/TS 全编译通过 |
+| [34](issues/34-命令面板体验修订.md) | 命令面板体验修订：热键自定义、弹窗 Esc、参考站点视觉与底部热键提示 | `resolved` | 无 | 热键录制 UI 与恢复默认、两设置弹窗 Esc 关闭、对齐参考站点视觉与细滚动条、窗口高度随内容包裹、底部常驻唤起热键 |
+| [35](issues/35-唤起闪白抖动与对话框指针消失.md) | 唤起瞬间空白抖动与原生文件夹对话框内指针消失 | `resolved` | 无 | 重置前移至失焦隐藏期间 + layout effect 同步收敛高度、移除 opacity 0 入场动画；WebView2 启动参数禁用 HideCursorWhileTyping 规避 #5687 指针回归 |
 
 ## 关联文档与事实来源
 
