@@ -61,4 +61,6 @@ Status: resolved
 33. ✅ [端到端集成与桌面多场景验证](issues/33-e2e-integration-and-verification.md)（Blocked by: 26, 28, 32）
 34. ✅ [命令面板体验修订：热键自定义、弹窗 Esc、参考站点视觉与底部热键提示](issues/34-命令面板体验修订.md)（Blocked by: 无）
 35. ✅ [唤起瞬间空白抖动与原生文件夹对话框内指针消失](issues/35-唤起闪白抖动与对话框指针消失.md)（Blocked by: 无）
+36. ✅ [面板窗口圆角错位与 CLI 唤起/收起命令面板](issues/36-窗口圆角错位与CLI唤起面板.md)（Blocked by: 无）
+37. ✅ [面板窗口外框边框圆角与表面过透](issues/37-窗口外框与表面过透.md)（Blocked by: 无）
 

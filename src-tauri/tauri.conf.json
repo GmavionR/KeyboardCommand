@@ -22,8 +22,8 @@
         "label": "command-palette",
         "title": "命令面板",
         "url": "/palette",
-        "width": 640,
-        "height": 480,
+        "width": 768,
+        "height": 608,
         "decorations": false,
         "transparent": true,
         "skipTaskbar": true,
@@ -31,6 +31,7 @@
         "resizable": false,
         "visible": false,
         "focus": false,
+        "shadow": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HideCursorWhileTyping"
       }
     ],

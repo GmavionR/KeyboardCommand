@@ -30,6 +30,14 @@ import {
 import type { CommandItem, CommandCategory } from "../../commands";
 
 const PALETTE_WIDTH = 640;
+// 透明外扩边距：容纳投影（侧向约 60px、顶部约 30px、底部约 90px）；
+// 配合窗口 shadow:false（去掉 DWM 给无装饰窗口加的 1px 边框与圆角），
+// 窗口边界完全不可见，只留内容自身的 20px 圆角
+const GUTTER_X = 64;
+const GUTTER_TOP = 32;
+const GUTTER_BOTTOM = 96;
+const WINDOW_WIDTH = PALETTE_WIDTH + GUTTER_X * 2;
+const WINDOW_EXTRA_HEIGHT = GUTTER_TOP + GUTTER_BOTTOM;
 const DEFAULT_SHORTCUT = "Ctrl+Shift+K";
 
 // ─────────────────────────────────────────────
@@ -189,6 +197,8 @@ function PaletteInner() {
     }
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
+    // CLI 首启动等场景窗口可能先于 React 挂载获焦，挂载时补一次聚焦
+    if (document.hasFocus()) inputRef.current?.focus();
     return () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
@@ -200,9 +210,9 @@ function PaletteInner() {
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    const height = Math.ceil(el.getBoundingClientRect().height);
+    const height = Math.ceil(el.getBoundingClientRect().height) + WINDOW_EXTRA_HEIGHT;
     void appWindow
-      .setSize(new LogicalSize(PALETTE_WIDTH, height))
+      .setSize(new LogicalSize(WINDOW_WIDTH, height))
       .catch(() => {});
   }, [appWindow, session, query, commands]);
 
@@ -211,9 +221,9 @@ function PaletteInner() {
     const el = rootRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
-      const height = Math.ceil(entries[0].contentRect.height);
+      const height = Math.ceil(entries[0].contentRect.height) + WINDOW_EXTRA_HEIGHT;
       void appWindow
-        .setSize(new LogicalSize(PALETTE_WIDTH, height))
+        .setSize(new LogicalSize(WINDOW_WIDTH, height))
         .catch(() => {});
     });
     observer.observe(el);
@@ -249,7 +259,7 @@ function PaletteInner() {
 
   return (
     <div
-      className="flex min-h-screen items-start justify-center bg-transparent"
+      className="flex min-h-screen items-start justify-center bg-transparent px-16 pb-24 pt-8"
       onMouseDown={(e) => {
         // 点击面板外的透明区域视为失焦意图，直接隐藏
         if (e.target === e.currentTarget) hidePalette();
@@ -258,7 +268,7 @@ function PaletteInner() {
       <Command
         key={session}
         ref={rootRef}
-        className="w-full max-w-[640px] overflow-hidden rounded-[20px] bg-pal-surface shadow-palette backdrop-blur-2xl"
+        className="w-full max-w-[640px] overflow-hidden rounded-[20px] bg-pal-surface shadow-palette"
         loop
         // 禁用 vim 绑定（cmdk ≥1.x 默认不启用，明确传 false 保险）
         vimBindings={false}

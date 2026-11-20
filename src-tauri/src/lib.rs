@@ -27,6 +27,9 @@ struct ShortcutStatus {
 struct ActivationRequest {
     route: Option<String>,
     error: Option<String>,
+    palette: Option<String>,
+    #[serde(skip)]
+    route_explicit: bool,
 }
 
 #[derive(Clone, Deserialize)]
@@ -108,6 +111,8 @@ impl ActivationRequest {
         Self {
             route: Some(route.to_string()),
             error: None,
+            palette: None,
+            route_explicit: false,
         }
     }
 
@@ -115,6 +120,8 @@ impl ActivationRequest {
         Self {
             route: None,
             error: Some(message.into()),
+            palette: None,
+            route_explicit: false,
         }
     }
 }
@@ -127,9 +134,19 @@ fn validate_route(route: &str) -> Result<&'static str, &'static str> {
     }
 }
 
+fn parse_palette_mode(value: &str) -> Option<&'static str> {
+    match value {
+        "show" => Some("show"),
+        "hide" => Some("hide"),
+        "toggle" => Some("toggle"),
+        _ => None,
+    }
+}
+
 fn parse_activation_args(args: impl IntoIterator<Item = String>) -> ActivationRequest {
-    let mut args = args.into_iter();
+    let mut args = args.into_iter().peekable();
     let mut requested_route: Option<String> = None;
+    let mut requested_palette: Option<String> = None;
 
     while let Some(argument) = args.next() {
         if argument == "--route" {
@@ -151,12 +168,40 @@ fn parse_activation_args(args: impl IntoIterator<Item = String>) -> ActivationRe
                 );
             }
             requested_route = Some(route.to_string());
+        } else if argument == "--palette" {
+            if requested_palette.is_some() {
+                return ActivationRequest::invalid("--palette 参数只能指定一次。");
+            }
+            // 可选模式参数：--palette show / hide / toggle，缺省 toggle
+            let mode = match args.peek().map(|s| s.as_str()) {
+                Some(next) => parse_palette_mode(next),
+                None => None,
+            };
+            if mode.is_some() {
+                args.next();
+            }
+            requested_palette = Some(mode.unwrap_or("toggle").to_string());
+        } else if let Some(mode) = argument.strip_prefix("--palette=") {
+            if requested_palette.is_some() {
+                return ActivationRequest::invalid("--palette 参数只能指定一次。");
+            }
+            let Some(mode) = parse_palette_mode(mode) else {
+                return ActivationRequest::invalid(
+                    "--palette 仅支持 show / hide / toggle，缺省为 toggle。",
+                );
+            };
+            requested_palette = Some(mode.to_string());
         }
     }
 
+    let route_explicit = requested_route.is_some();
     let route = requested_route.as_deref().unwrap_or(DEFAULT_ROUTE);
     match validate_route(route) {
-        Ok(route) => ActivationRequest::valid(route),
+        Ok(route) => ActivationRequest {
+            palette: requested_palette,
+            route_explicit,
+            ..ActivationRequest::valid(route)
+        },
         Err(message) => {
             ActivationRequest::invalid(format!("{message} 默认功能页为 /folder-copy。"))
         }
@@ -277,6 +322,20 @@ fn handle_palette_toggle(app_handle: &tauri::AppHandle) {
         } else {
             let _ = show_palette_window(app_handle);
         }
+    }
+}
+
+fn apply_palette_action(app: &tauri::AppHandle, action: &str) {
+    match action {
+        "show" => {
+            let _ = show_palette_window(app);
+        }
+        "hide" => {
+            if let Some(palette) = app.get_webview_window("command-palette") {
+                let _ = palette.hide();
+            }
+        }
+        _ => handle_palette_toggle(app),
     }
 }
 
@@ -751,6 +810,20 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let request = parse_activation_args(args.into_iter().skip(1));
 
+            if let Some(action) = request.palette.clone() {
+                // 仅操作面板时不置前主窗口：主窗口抢焦点会触发面板失焦隐藏
+                if request.route_explicit {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app.emit("activation-request", request.clone());
+                }
+                apply_palette_action(app, &action);
+                return;
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -840,6 +913,17 @@ pub fn run() {
                 let _ = apply_palette_shortcut(app.handle(), &status, &initial_shortcut);
             }
 
+            // 首启动携带 --palette：按 launcher 语义只呈现面板，不展示主窗口
+            let initial_request = app.state::<ActivationRequest>().inner().clone();
+            if let Some(action) = initial_request.palette {
+                if !initial_request.route_explicit {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
+                apply_palette_action(app.handle(), &action);
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -883,6 +967,59 @@ mod tests {
             ignored_directories: vec![".git".to_string(), "target".to_string()],
             large_dir_threshold: 50,
         }
+    }
+
+    #[test]
+    fn palette_cli_bare_defaults_to_toggle() {
+        let request = parse_activation_args(["--palette".to_string()]);
+        assert_eq!(request.palette.as_deref(), Some("toggle"));
+        assert!(request.error.is_none());
+        assert!(!request.route_explicit);
+    }
+
+    #[test]
+    fn palette_cli_accepts_equals_and_space_modes() {
+        for (args, expected) in [
+            (vec!["--palette=show"], "show"),
+            (vec!["--palette=hide"], "hide"),
+            (vec!["--palette=toggle"], "toggle"),
+            (vec!["--palette", "show"], "show"),
+            (vec!["--palette", "hide"], "hide"),
+        ] {
+            let request = parse_activation_args(args.into_iter().map(String::from));
+            assert_eq!(request.palette.as_deref(), Some(expected));
+            assert!(request.error.is_none());
+        }
+    }
+
+    #[test]
+    fn palette_cli_bare_does_not_swallow_following_flag() {
+        let request = parse_activation_args(
+            ["--palette", "--route", "/prompts"]
+                .into_iter()
+                .map(String::from),
+        );
+        assert_eq!(request.palette.as_deref(), Some("toggle"));
+        assert_eq!(request.route.as_deref(), Some("/prompts"));
+        assert!(request.route_explicit);
+    }
+
+    #[test]
+    fn palette_cli_invalid_mode_reports_error() {
+        let request = parse_activation_args(["--palette=spin".to_string()]);
+        assert!(request.palette.is_none());
+        assert!(request.error.is_some());
+    }
+
+    #[test]
+    fn palette_cli_duplicate_reports_error() {
+        let request = parse_activation_args(
+            ["--palette", "--palette=hide"]
+                .into_iter()
+                .map(String::from),
+        );
+        assert!(request.palette.is_none());
+        assert!(request.error.is_some());
     }
 
     #[test]

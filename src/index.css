@@ -4,7 +4,7 @@
 
 /* 命令面板设计 token（对齐参考站点的冷灰蓝 + 品牌蓝体系） */
 :root {
-  --pal-surface: oklch(99.5% 0.003 230 / 0.82);
+  --pal-surface: oklch(99.5% 0.003 230);
   --pal-raised: oklch(100% 0 0);
   --pal-fg: oklch(12.9% 0.042 264.695);
   --pal-border: oklch(92.9% 0.013 255.508);
@@ -20,7 +20,7 @@
 }
 
 .dark {
-  --pal-surface: oklch(22% 0.015 240 / 0.82);
+  --pal-surface: oklch(22% 0.015 240);
   --pal-raised: oklch(26% 0.015 240);
   --pal-fg: oklch(92.9% 0.013 255.508);
   --pal-border: oklch(1 0 0 / 0.1);

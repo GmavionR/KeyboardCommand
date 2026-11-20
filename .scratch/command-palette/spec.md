@@ -248,6 +248,8 @@ KeyboardCommand（KbcApp）是一款面向 Windows 的键盘效率工具，随�
 | [33](issues/33-e2e-integration-and-verification.md) | 端到端集成与桌面多场景验证 | `resolved` | 26, 28, 32 | 12 条用户故事桌面真机回归、高 DPI 多屏验证、Rust/TS 全编译通过 |
 | [34](issues/34-命令面板体验修订.md) | 命令面板体验修订：热键自定义、弹窗 Esc、参考站点视觉与底部热键提示 | `resolved` | 无 | 热键录制 UI 与恢复默认、两设置弹窗 Esc 关闭、对齐参考站点视觉与细滚动条、窗口高度随内容包裹、底部常驻唤起热键 |
 | [35](issues/35-唤起闪白抖动与对话框指针消失.md) | 唤起瞬间空白抖动与原生文件夹对话框内指针消失 | `resolved` | 无 | 重置前移至失焦隐藏期间 + layout effect 同步收敛高度、移除 opacity 0 入场动画；WebView2 启动参数禁用 HideCursorWhileTyping 规避 #5687 指针回归 |
+| [36](issues/36-窗口圆角错位与CLI唤起面板.md) | 面板窗口圆角错位与 CLI 唤起/收起命令面板 | `resolved` | 无 | 透明外扩边距容纳投影使窗口圆角落在透明区；`--palette [show\|hide\|toggle]` 沿用 `--route` 解析风格，单实例转发不抢主窗口焦点 |
+| [37](issues/37-窗口外框与表面过透.md) | 面板窗口外框边框圆角与表面过透 | `resolved` | 无 | 面板窗口 `shadow:false` 去除 DWM 1px 边框/圆角/框架底；表面改不透明并移除 backdrop-blur，投影由 CSS + 透明外扩承担 |
 
 ## 关联文档与事实来源
 
