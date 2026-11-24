@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod context_package;
@@ -12,8 +13,31 @@ mod history_store;
 mod search;
 pub(crate) mod prompt_store;
 pub(crate) mod memory_stats;
+pub(crate) mod app_logger;
 #[cfg(windows)]
 pub(crate) mod windows_bridge;
+
+pub const MAIN_WINDOW_LABEL: &str = "main";
+#[cfg(debug_assertions)]
+const DEFAULT_IDLE_DESTROY_DELAY_SECS: u64 = 30;
+#[cfg(not(debug_assertions))]
+const DEFAULT_IDLE_DESTROY_DELAY_SECS: u64 = 180;
+#[cfg(not(debug_assertions))]
+const MIN_IDLE_DESTROY_DELAY_SECS: u64 = 30;
+#[cfg(not(debug_assertions))]
+const MAX_IDLE_DESTROY_DELAY_SECS: u64 = 3_600;
+
+#[derive(Default)]
+pub struct WindowLifecycleState {
+    pub pending_destroy: Option<tauri::async_runtime::JoinHandle<()>>,
+    pub is_destroying: bool,
+    pub is_recreating: bool,
+    destroy_generation: u64,
+}
+
+pub type SharedLifecycle = Arc<Mutex<WindowLifecycleState>>;
+
+pub struct CurrentActivation(pub(crate) Mutex<ActivationRequest>);
 
 const DEFAULT_ROUTE: &str = "/folder-copy";
 /// 命令面板全局热键默认值（Ctrl+Shift+K）
@@ -25,6 +49,8 @@ struct ShortcutStatus {
     registered: bool,
     error: Option<String>,
 }
+
+struct IdleDestroyDelay(Mutex<u64>);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -241,8 +267,20 @@ fn parse_activation_args(args: impl IntoIterator<Item = String>) -> ActivationRe
 }
 
 #[tauri::command]
-fn initial_activation(request: State<'_, ActivationRequest>) -> ActivationRequest {
-    request.inner().clone()
+fn initial_activation(current: State<'_, CurrentActivation>) -> ActivationRequest {
+    current.0.lock().unwrap().clone()
+}
+
+pub(crate) fn set_activation_route(app: &AppHandle, route: &str) -> Result<(), String> {
+    let route = validate_route(route).map_err(str::to_string)?;
+    let activation = app
+        .try_state::<CurrentActivation>()
+        .ok_or_else(|| "启动路由状态尚未初始化".to_string())?;
+    let mut current = activation.0.lock().unwrap();
+    current.route = Some(route.to_string());
+    current.error = None;
+    current.route_explicit = true;
+    Ok(())
 }
 
 /// 计算命令面板在目标显示器上的居中偏上位置，然后显示并聚焦。
@@ -406,17 +444,259 @@ fn get_memory_stats() -> memory_stats::MemoryStats {
     memory_stats::get_application_memory_stats()
 }
 
-/// 激活主窗口到前台（show + unminimize + set_focus）。
+#[tauri::command]
+fn get_idle_destroy_delay_seconds(delay: State<'_, IdleDestroyDelay>) -> u64 {
+    *delay.0.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_idle_destroy_delay_seconds(
+    app: AppHandle,
+    delay: State<'_, IdleDestroyDelay>,
+    seconds: u64,
+) -> Result<u64, String> {
+    #[cfg(debug_assertions)]
+    let configured_seconds = {
+        let _ = seconds;
+        DEFAULT_IDLE_DESTROY_DELAY_SECS
+    };
+
+    #[cfg(not(debug_assertions))]
+    let configured_seconds = {
+        if !(MIN_IDLE_DESTROY_DELAY_SECS..=MAX_IDLE_DESTROY_DELAY_SECS).contains(&seconds) {
+            return Err(format!(
+                "空闲销毁时间必须在 {MIN_IDLE_DESTROY_DELAY_SECS} 到 {MAX_IDLE_DESTROY_DELAY_SECS} 秒之间。"
+            ));
+        }
+        seconds
+    };
+
+    *delay.0.lock().unwrap() = configured_seconds;
+    if let (Some(window), Some(lifecycle)) = (
+        app.get_webview_window(MAIN_WINDOW_LABEL),
+        app.try_state::<SharedLifecycle>(),
+    ) {
+        if matches!(window.is_visible(), Ok(false)) {
+            schedule_idle_destroy(app.clone(), lifecycle.inner().clone());
+        }
+    }
+    Ok(configured_seconds)
+}
+
+pub fn create_main_window(app: &AppHandle, source: &'static str) -> tauri::Result<WebviewWindow> {
+    let start_time = std::time::Instant::now();
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == MAIN_WINDOW_LABEL)
+        .ok_or_else(|| tauri::Error::WindowNotFound)?;
+
+    let mut builder = WebviewWindowBuilder::from_config(app, window_config)?.visible(false);
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone())?;
+    }
+    let window = builder.build()?;
+
+    #[cfg(windows)]
+    windows_bridge::setup_wm_copydata_listener(&window);
+
+    app_logger::log_lifecycle_event(
+        app,
+        "WINDOW_CREATED",
+        &format!(
+            "主窗口对象创建完成（来源：{source}，耗时：{}ms），等待显示与前端加载",
+            start_time.elapsed().as_millis()
+        ),
+    );
+
+    Ok(window)
+}
+
+pub fn cancel_pending_destroy(lifecycle: &SharedLifecycle) {
+    let mut state = lifecycle.lock().unwrap();
+    state.destroy_generation = state.destroy_generation.wrapping_add(1);
+    if let Some(handle) = state.pending_destroy.take() {
+        handle.abort();
+    }
+}
+
+pub fn schedule_idle_destroy(app: AppHandle, lifecycle: SharedLifecycle) {
+    let delay_seconds = app
+        .try_state::<IdleDestroyDelay>()
+        .map(|state| *state.0.lock().unwrap())
+        .unwrap_or(DEFAULT_IDLE_DESTROY_DELAY_SECS);
+    let mut state = lifecycle.lock().unwrap();
+    if let Some(old_handle) = state.pending_destroy.take() {
+        old_handle.abort();
+    }
+    state.destroy_generation = state.destroy_generation.wrapping_add(1);
+    let generation = state.destroy_generation;
+
+    app_logger::log_lifecycle_event(
+        &app,
+        "IDLE_TIMER_STARTED",
+        &format!("主窗口已隐藏，启动 {delay_seconds} 秒空闲销毁倒计时"),
+    );
+
+    let lc_for_task = lifecycle.clone();
+    let app_for_task = app.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+
+        {
+            let mut guard = lc_for_task.lock().unwrap();
+            if guard.destroy_generation != generation {
+                return;
+            }
+            guard.pending_destroy = None;
+            guard.is_destroying = true;
+        }
+
+        if let Some(win) = app_for_task.get_webview_window(MAIN_WINDOW_LABEL) {
+            match win.is_visible() {
+                Ok(false) => {
+                    app_logger::log_lifecycle_event(
+                        &app_for_task,
+                        "WINDOW_DESTROY_ATTEMPT",
+                        &format!(
+                            "主窗口隐藏闲置达到阈值（{}s），调用 win.destroy()",
+                            delay_seconds
+                        ),
+                    );
+                    match win.destroy() {
+                        Ok(()) => app_logger::log_lifecycle_event(
+                            &app_for_task,
+                            "WINDOW_DESTROYED",
+                            "主窗口 WebView 已销毁",
+                        ),
+                        Err(error) => app_logger::log_lifecycle_event(
+                            &app_for_task,
+                            "WINDOW_DESTROY_ERROR",
+                            &format!("主窗口 WebView 销毁失败：{error}"),
+                        ),
+                    }
+                }
+                Ok(true) => app_logger::log_lifecycle_event(
+                    &app_for_task,
+                    "WINDOW_DESTROY_SKIPPED",
+                    "销毁前复核发现主窗口已重新显示，取消销毁",
+                ),
+                Err(error) => app_logger::log_lifecycle_event(
+                    &app_for_task,
+                    "WINDOW_DESTROY_SKIPPED",
+                    &format!("无法确认主窗口隐藏状态，跳过销毁：{error}"),
+                ),
+            }
+        }
+        lc_for_task.lock().unwrap().is_destroying = false;
+    });
+
+    state.pending_destroy = Some(handle);
+}
+
+pub fn show_or_recreate_main_window(
+    app: &AppHandle,
+    source: &'static str,
+) -> Result<(), String> {
+    let Some(lifecycle) = app.try_state::<SharedLifecycle>() else {
+        return Err("窗口生命周期状态尚未初始化".to_string());
+    };
+
+    let should_log_cancel = lifecycle.lock().unwrap().pending_destroy.is_some();
+    if should_log_cancel {
+        app_logger::log_lifecycle_event(
+            app,
+            "IDLE_TIMER_CANCELLED",
+            "主窗口收到唤醒请求，取消待执行的空闲销毁定时器",
+        );
+    }
+    cancel_pending_destroy(&lifecycle);
+
+    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let state = lifecycle.lock().unwrap();
+        if !state.is_destroying {
+            let _ = win.unminimize();
+            let _ = win.show();
+            let _ = win.set_focus();
+            drop(state);
+            app_logger::log_lifecycle_event(
+                app,
+                "WINDOW_SHOW",
+                &format!("主窗口实例仍存活，直接恢复置前并聚焦（来源：{source}）"),
+            );
+            return Ok(());
+        }
+    }
+
+    {
+        let mut state = lifecycle.lock().unwrap();
+        if state.is_recreating {
+            return Ok(());
+        }
+        state.is_recreating = true;
+    }
+
+    app_logger::log_lifecycle_event(
+        app,
+        "WINDOW_RECREATE_TRIGGERED",
+        &format!("主窗口已销毁或正在销毁，触发后台按需重建（来源：{source}）"),
+    );
+    let app = app.clone();
+    let lifecycle = lifecycle.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        loop {
+            let destroying = lifecycle.lock().unwrap().is_destroying;
+            if !destroying {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        let result = if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+            Ok(win)
+        } else {
+            create_main_window(&app, source)
+        };
+        match result {
+            Ok(win) => {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+            Err(error) => app_logger::log_lifecycle_event(
+                &app,
+                "WINDOW_RECREATE_ERROR",
+                &format!("主窗口重建失败：{error}"),
+            ),
+        }
+        lifecycle.lock().unwrap().is_recreating = false;
+    });
+    Ok(())
+}
+
+pub fn toggle_main_window(app: &AppHandle, source: &'static str) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+            let _ = window.hide();
+            if let Some(lifecycle) = app.try_state::<SharedLifecycle>() {
+                schedule_idle_destroy(app.clone(), lifecycle.inner().clone());
+            }
+            return;
+        }
+    }
+    let _ = show_or_recreate_main_window(app, source);
+}
+
+/// 激活主窗口到前台（show + unminimize + set_focus，不存在时自动按需重建）。
 /// 由命令面板的 activateMainWindow / navigate 执行上下文调用。
 #[tauri::command]
-fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or("找不到主窗口")?;
-    window.show().map_err(|e| e.to_string())?;
-    window.unminimize().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-    Ok(())
+fn show_main_window(app: tauri::AppHandle, route: Option<String>) -> Result<(), String> {
+    if let Some(r) = route.as_ref() {
+        set_activation_route(&app, r)?;
+    }
+    show_or_recreate_main_window(&app, "命令面板")
 }
 
 #[derive(Serialize, Clone)]
@@ -903,6 +1183,9 @@ async fn list_selectable_files(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_request = parse_activation_args(std::env::args().skip(1));
+    let current_activation = CurrentActivation(Mutex::new(initial_request));
+    let lifecycle: SharedLifecycle = Arc::default();
+    let idle_destroy_delay = IdleDestroyDelay(Mutex::new(DEFAULT_IDLE_DESTROY_DELAY_SECS));
     let shortcut_status = Mutex::new(ShortcutStatus {
         shortcut: PALETTE_SHORTCUT_DEFAULT.to_string(),
         registered: false,
@@ -941,7 +1224,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(initial_request)
+        .manage(current_activation)
+        .manage(lifecycle)
+        .manage(idle_destroy_delay)
         .manage(shortcut_status)
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(
@@ -953,35 +1238,45 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let request = parse_activation_args(args.into_iter().skip(1));
 
+            if let Some(current) = app.try_state::<CurrentActivation>() {
+                *current.0.lock().unwrap() = request.clone();
+            }
+
             if let Some(action) = request.palette.clone() {
                 // 仅操作面板时不置前主窗口：主窗口抢焦点会触发面板失焦隐藏
                 if request.route_explicit {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.unminimize();
-                        let _ = window.set_focus();
-                    }
+                    let source = if request.route_explicit { "CLI" } else { "单实例" };
+                    let _ = show_or_recreate_main_window(app, source);
                     let _ = app.emit("activation-request", request.clone());
                 }
                 apply_palette_action(app, &action);
                 return;
             }
 
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-
+            let source = if request.route_explicit { "CLI" } else { "单实例" };
+            let _ = show_or_recreate_main_window(app, source);
             let _ = app.emit("activation-request", request);
         }))
         .plugin(tauri_plugin_opener::init())
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
-                    if window.label() == "main" {
+                    if window.label() == MAIN_WINDOW_LABEL {
+                        let app = window.app_handle();
+                        if let Some(lifecycle) = app.try_state::<SharedLifecycle>() {
+                            let state = lifecycle.lock().unwrap();
+                            if state.is_destroying {
+                                return;
+                            }
+                        }
+
                         api.prevent_close();
                         let _ = window.hide();
+
+                        let app = window.app_handle();
+                        if let Some(lifecycle) = app.try_state::<SharedLifecycle>() {
+                            schedule_idle_destroy(app.clone(), lifecycle.inner().clone());
+                        }
                     }
                 }
                 tauri::WindowEvent::Focused(false) => {
@@ -1004,7 +1299,7 @@ pub fn run() {
                 .build()?;
 
             let mut tray_builder = TrayIconBuilder::with_id("main-tray")
-                .tooltip("KeyboardCommand")
+                .tooltip("键盘命令")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
@@ -1014,26 +1309,13 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        toggle_main_window(tray.app_handle(), "托盘左键");
                     }
                 })
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
                         "show_main" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
+                            let _ = show_or_recreate_main_window(app, "托盘菜单");
                         }
                         "show_prompts" => {
                             let _ = show_palette_window_with_mode(app, "prompts");
@@ -1042,6 +1324,9 @@ pub fn run() {
                             let _ = show_palette_window_with_mode(app, "palette");
                         }
                         "quit" => {
+                            if let Some(lifecycle) = app.try_state::<SharedLifecycle>() {
+                                cancel_pending_destroy(&lifecycle);
+                            }
                             app.exit(0);
                         }
                         _ => {}
@@ -1057,7 +1342,7 @@ pub fn run() {
             // 挂载 Windows 原生 WM_COPYDATA 消息监听通道
             #[cfg(windows)]
             {
-                if let Some(main_win) = app.get_webview_window("main") {
+                if let Some(main_win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                     windows_bridge::setup_wm_copydata_listener(&main_win);
                 }
                 if let Some(palette_win) = app.get_webview_window("command-palette") {
@@ -1072,11 +1357,14 @@ pub fn run() {
             }
 
             // 首启动携带 --palette：按 launcher 语义只呈现面板，不展示主窗口
-            let initial_request = app.state::<ActivationRequest>().inner().clone();
+            let initial_request = app.state::<CurrentActivation>().0.lock().unwrap().clone();
             if let Some(action) = initial_request.palette {
                 if !initial_request.route_explicit {
-                    if let Some(window) = app.get_webview_window("main") {
+                    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                         let _ = window.hide();
+                        if let Some(lifecycle) = app.try_state::<SharedLifecycle>() {
+                            schedule_idle_destroy(app.handle().clone(), lifecycle.inner().clone());
+                        }
                     }
                 }
                 apply_palette_action(app.handle(), &action);
@@ -1114,7 +1402,11 @@ pub fn run() {
             paste_prompt,
             reveal_prompt_file,
             open_prompt_file,
-            get_memory_stats
+            get_memory_stats,
+            get_idle_destroy_delay_seconds,
+            set_idle_destroy_delay_seconds,
+            app_logger::get_log_dir,
+            app_logger::open_log_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1123,6 +1415,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_destroy_delay_matches_build_configuration() {
+        if cfg!(debug_assertions) {
+            assert_eq!(DEFAULT_IDLE_DESTROY_DELAY_SECS, 30);
+        } else {
+            assert_eq!(DEFAULT_IDLE_DESTROY_DELAY_SECS, 180);
+        }
+    }
 
     fn settings() -> TreeSettings {
         TreeSettings {
@@ -1290,5 +1591,35 @@ mod tests {
         assert!("Ctrl+Shift+P".parse::<Shortcut>().is_ok());
         assert!("Alt+Space".parse::<Shortcut>().is_ok());
         assert!("invalid-shortcut-string".parse::<Shortcut>().is_err());
+    }
+
+    #[test]
+    fn cancelling_pending_destroy_does_not_clear_active_destroy() {
+        let lifecycle: SharedLifecycle = Arc::default();
+        {
+            let mut state = lifecycle.lock().unwrap();
+            state.is_destroying = true;
+            let handle = tauri::async_runtime::spawn(async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+            });
+            state.pending_destroy = Some(handle);
+        }
+
+        cancel_pending_destroy(&lifecycle);
+
+        let state = lifecycle.lock().unwrap();
+        assert!(state.is_destroying);
+        assert!(state.pending_destroy.is_none());
+    }
+
+    #[test]
+    fn current_activation_updates_and_reads() {
+        let req1 = parse_activation_args(["--route".to_string(), "/prompts".to_string()]);
+        let activation = CurrentActivation(Mutex::new(req1));
+        assert_eq!(activation.0.lock().unwrap().route.as_deref(), Some("/prompts"));
+
+        let req2 = parse_activation_args(["--route".to_string(), "/folder-copy".to_string()]);
+        *activation.0.lock().unwrap() = req2;
+        assert_eq!(activation.0.lock().unwrap().route.as_deref(), Some("/folder-copy"));
     }
 }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KeyboardCommand",
+  "productName": "键盘命令",
   "version": "0.1.0",
   "identifier": "com.keyboardcommand.app",
   "build": {
@@ -12,7 +12,8 @@
   "app": {
     "windows": [
       {
-        "title": "文件夹内容复制",
+        "label": "main",
+        "title": "主窗口",
         "width": 1280,
         "height": 800,
         "decorations": false,
@@ -20,7 +21,7 @@
       },
       {
         "label": "command-palette",
-        "title": "命令面板",
+        "title": "快捷浮窗",
         "url": "/palette",
         "width": 768,
         "height": 608,

@@ -20,7 +20,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
           K
         </div>
         <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1">
-          KeyboardCommand
+          键盘命令
         </span>
 
         {/* Feature Navigation Tabs */}

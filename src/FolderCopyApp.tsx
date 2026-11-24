@@ -357,6 +357,9 @@ export default function App() {
       void touchRecentFolder(requestedPath).catch((error) =>
         showToast('error', '最近文件夹未能写入数据库，仅本次运行有效', String(error))
       );
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('kbc_last_active_folder', requestedPath);
+      }
       showToast('success', sameFolder ? '已重新载入文件夹' : '已加载指定文件夹', requestedPath);
       return 'loaded';
     } catch (error) {
@@ -368,6 +371,16 @@ export default function App() {
       if (requestVersion === folderLoadVersion.current) setIsLoadingFolder(false);
     }
   }, [currentPath, isSettingsInitialized, restoreSelectionFromHistory, settings, showToast]);
+
+  const hasRestoredFolder = useRef(false);
+  useEffect(() => {
+    if (hasRestoredFolder.current) return;
+    hasRestoredFolder.current = true;
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('kbc_last_active_folder') : null;
+    if (saved) {
+      void loadFolder(saved);
+    }
+  }, [loadFolder]);
 
   const handleLoadSettings = async () => {
     setIsSettingsLoading(true);

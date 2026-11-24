@@ -2,7 +2,7 @@
   "name": "keyboard-command",
   "private": true,
   "version": "0.1.0",
-  "description": "KeyboardCommand 桌面效率工具",
+  "description": "键盘命令桌面效率工具",
   "type": "module",
   "scripts": {
     "dev": "vite",

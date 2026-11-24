@@ -55,7 +55,15 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/folder-copy" });
+    const savedRoute =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("kbc_last_route")
+        : null;
+    const targetRoute =
+      savedRoute === "/prompts" || savedRoute === "/folder-copy"
+        ? (savedRoute as "/folder-copy" | "/prompts")
+        : "/folder-copy";
+    throw redirect({ to: targetRoute });
   },
 });
 

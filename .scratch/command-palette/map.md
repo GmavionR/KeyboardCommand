@@ -64,3 +64,6 @@ Status: resolved
 36. ✅ [面板窗口圆角错位与 CLI 唤起/收起命令面板](issues/36-窗口圆角错位与CLI唤起面板.md)（Blocked by: 无）
 37. ✅ [面板窗口外框边框圆角与表面过透](issues/37-窗口外框与表面过透.md)（Blocked by: 无）
 
+38. ✅ [后台空闲自动销毁 WebView 释放内存与按需重建](issues/38-后台空闲自动销毁webview释放内存.md)（Blocked by: 无）
+39. ✅ [窗口生命周期日志记录与设置展示](issues/39-窗口生命周期日志记录与设置展示.md)（Blocked by: 无）
+40. ✅ [修复WebView销毁重建白屏与路由竞态](issues/40-修复WebView销毁重建白屏与路由竞态.md)（Blocked by: 无）

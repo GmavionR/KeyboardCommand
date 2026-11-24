@@ -123,13 +123,19 @@ const KBD_CHIP =
 function buildContext() {
   return {
     navigate: async (to: string) => {
-      await invoke("show_main_window").catch(() => {});
+      try {
+        localStorage.setItem("kbc_last_route", to);
+      } catch (_) {}
+      await invoke("show_main_window", { route: to }).catch(() => {});
       await emit("kbc://navigate", to);
     },
     activateMainWindow: async () => {
       await invoke("show_main_window").catch(() => {});
     },
     emitEvent: async (event: string, payload?: unknown) => {
+      try {
+        localStorage.setItem("kbc_pending_action", event);
+      } catch (_) {}
       await emit(event, payload);
     },
   };

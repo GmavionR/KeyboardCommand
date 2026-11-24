@@ -1,10 +1,10 @@
-# KeyboardCommand 项目背景与设计需求
+# 键盘命令（KeyboardCommand）项目背景与设计需求
 
 > 状态：需求草稿。已确认的方向和待决事项记录在 `.scratch/folder-content-copy/` 中；本文描述产品背景及当前范围。
 
 ## 1. 项目概述
 
-KeyboardCommand（简称 KbcApp）是一款面向 Windows 的快捷效率工具。软件逐步加入多个独立的高频小工具，包括文件夹浏览与文件上下文包复制、命令面板，以及**提示词片段**。核心设计原则是轻量级，全局内存占用严格控制在 40MB 以下。未来还可以扩展其他快捷工具。
+键盘命令（KeyboardCommand，简称 KbcApp）是一款面向 Windows 的快捷效率工具。软件逐步加入多个独立的高频小工具，包括文件夹浏览与文件上下文包复制、命令面板，以及**提示词片段**。核心设计原则是轻量级，全局内存占用严格控制在 40MB 以下。未来还可以扩展其他快捷工具。
 
 提示词片段的设计与技术规格见 [提示词片段规格说明书](.scratch/prompt-snippets/spec.md) 与 [Wayfinder 地图](.scratch/prompt-snippets/map.md)。
 

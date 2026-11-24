@@ -2233,6 +2233,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-sql",
+ "tokio",
  "windows-sys 0.59.0",
 ]
 

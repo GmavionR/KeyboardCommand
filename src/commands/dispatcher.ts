@@ -116,6 +116,21 @@ export function closeSystemSettings() {
 export async function initMainWindowDispatcher() {
   const unlisteners: Array<() => void> = [];
 
+  // 若窗口由销毁后重新创建，检查是否存在未决的调度动作
+  try {
+    const pendingAction = localStorage.getItem("kbc_pending_action");
+    if (pendingAction) {
+      localStorage.removeItem("kbc_pending_action");
+      if (pendingAction === OPEN_FOLDER_EVENT) {
+        void dispatchOpenFolder();
+      } else if (pendingAction === OPEN_PAGE_SETTINGS_EVENT) {
+        void dispatchOpenPageSettings();
+      } else if (pendingAction === OPEN_SYSTEM_SETTINGS_EVENT) {
+        openSystemSettings();
+      }
+    }
+  } catch (_) {}
+
   unlisteners.push(
     await listen<string>(NAVIGATE_EVENT, ({ payload }) => {
       if (payload === "/folder-copy" || payload === "/prompts") {
@@ -126,18 +141,21 @@ export async function initMainWindowDispatcher() {
 
   unlisteners.push(
     await listen(OPEN_FOLDER_EVENT, () => {
+      try { localStorage.removeItem("kbc_pending_action"); } catch (_) {}
       void dispatchOpenFolder();
     })
   );
 
   unlisteners.push(
     await listen(OPEN_PAGE_SETTINGS_EVENT, () => {
+      try { localStorage.removeItem("kbc_pending_action"); } catch (_) {}
       void dispatchOpenPageSettings();
     })
   );
 
   unlisteners.push(
     await listen(OPEN_SYSTEM_SETTINGS_EVENT, () => {
+      try { localStorage.removeItem("kbc_pending_action"); } catch (_) {}
       openSystemSettings();
     })
   );

@@ -110,56 +110,116 @@ pub fn paste_snippet_to_active_window(
 #[cfg(windows)]
 pub fn setup_wm_copydata_listener(window: &tauri::WebviewWindow) {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::WM_COPYDATA;
+    use windows_sys::Win32::UI::Shell::{
+        DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_COPYDATA, WM_NCDESTROY};
 
     let hwnd_raw = match window.hwnd() {
         Ok(h) => h.0 as HWND,
         Err(_) => return,
     };
 
-    unsafe extern "system" fn subclass_proc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-        _uid_subclass: usize,
-        dw_ref_data: usize,
-    ) -> LRESULT {
-        if msg == WM_COPYDATA {
-            let p_copy_data = lparam as *const COPYDATASTRUCT;
-            if !p_copy_data.is_null() {
+    unsafe fn install(hwnd: HWND, app: AppHandle) -> Result<(), String> {
+        unsafe extern "system" fn subclass_proc(
+            hwnd: HWND,
+            msg: u32,
+            wparam: WPARAM,
+            lparam: LPARAM,
+            uid_subclass: usize,
+            dw_ref_data: usize,
+        ) -> LRESULT {
+            if msg == WM_NCDESTROY {
                 unsafe {
-                    let data_ptr = (*p_copy_data).lp_data as *const u8;
-                    let data_len = (*p_copy_data).cb_data as usize;
-                    if !data_ptr.is_null() && data_len > 0 {
-                        let slice = std::slice::from_raw_parts(data_ptr, data_len);
-                        // 尝试以 UTF-8 解析 JSON
-                        if let Ok(text) = std::str::from_utf8(slice) {
-                            let trimmed = text.trim_end_matches('\0').trim();
-                            // 调度应用处理
-                            let app_ptr = dw_ref_data as *const AppHandle;
-                            if !app_ptr.is_null() {
-                                let app = &*app_ptr;
-                                handle_wm_copydata_payload(app, trimmed);
-                                return 1; // 成功处理
+                    RemoveWindowSubclass(hwnd, Some(subclass_proc), uid_subclass);
+                    if dw_ref_data != 0 {
+                        drop(Box::from_raw(dw_ref_data as *mut AppHandle));
+                    }
+                    return DefSubclassProc(hwnd, msg, wparam, lparam);
+                }
+            }
+
+            if msg == WM_COPYDATA {
+                let p_copy_data = lparam as *const COPYDATASTRUCT;
+                if !p_copy_data.is_null() {
+                    unsafe {
+                        let data_ptr = (*p_copy_data).lp_data as *const u8;
+                        let data_len = (*p_copy_data).cb_data as usize;
+                        if !data_ptr.is_null() && data_len > 0 {
+                            let slice = std::slice::from_raw_parts(data_ptr, data_len);
+                            if let Ok(text) = std::str::from_utf8(slice) {
+                                let trimmed = text.trim_end_matches('\0').trim();
+                                let app_ptr = dw_ref_data as *const AppHandle;
+                                if !app_ptr.is_null() {
+                                    handle_wm_copydata_payload(&*app_ptr, trimmed);
+                                    return 1;
+                                }
                             }
                         }
                     }
                 }
             }
+            unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
         }
-        unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+
+        let app_handle = Box::into_raw(Box::new(app));
+        let installed = unsafe {
+            SetWindowSubclass(hwnd, Some(subclass_proc), 1001, app_handle as usize)
+        };
+        if installed == 0 {
+            unsafe { drop(Box::from_raw(app_handle)) };
+            return Err("SetWindowSubclass 安装 WM_COPYDATA 监听失败".to_string());
+        }
+        Ok(())
     }
 
-    let app_handle = Box::into_raw(Box::new(window.app_handle().clone()));
-    unsafe {
-        SetWindowSubclass(
-            hwnd_raw,
-            Some(subclass_proc),
-            1001, // unique subclass id
-            app_handle as usize,
+    let owner_thread = unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+        GetWindowThreadProcessId(hwnd_raw, std::ptr::null_mut())
+    };
+    let current_thread = unsafe {
+        windows_sys::Win32::System::Threading::GetCurrentThreadId()
+    };
+    if owner_thread == current_thread {
+        if let Err(error) = unsafe { install(hwnd_raw, window.app_handle().clone()) } {
+            crate::app_logger::log_lifecycle_event(
+                &window.app_handle(),
+                "WM_COPYDATA_LISTENER_ERROR",
+                &error,
+            );
+        }
+        return;
+    }
+
+    let window = window.clone();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let app = window.app_handle().clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        let result = match window.hwnd() {
+            Ok(hwnd) => unsafe { install(hwnd.0 as HWND, window.app_handle().clone()) },
+            Err(error) => Err(error.to_string()),
+        };
+        let _ = sender.send(result);
+    }) {
+        crate::app_logger::log_lifecycle_event(
+            &app,
+            "WM_COPYDATA_LISTENER_ERROR",
+            &format!("无法调度到窗口所属线程：{error}"),
         );
+        return;
+    }
+    match receiver.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => crate::app_logger::log_lifecycle_event(
+            &app,
+            "WM_COPYDATA_LISTENER_ERROR",
+            &error,
+        ),
+        Err(error) => crate::app_logger::log_lifecycle_event(
+            &app,
+            "WM_COPYDATA_LISTENER_ERROR",
+            &format!("等待窗口所属线程安装监听超时：{error}"),
+        ),
     }
 }
 
@@ -201,12 +261,11 @@ fn handle_wm_copydata_payload(app: &AppHandle, payload_str: &str) {
             }
             "navigate" | "route" => {
                 let route = json.get("route").and_then(|v| v.as_str()).unwrap_or("/folder-copy");
-                if let Some(main_win) = app.get_webview_window("main") {
-                    let _ = main_win.show();
-                    let _ = main_win.unminimize();
-                    let _ = main_win.set_focus();
+                if crate::set_activation_route(app, route).is_err() {
+                    return;
                 }
-                let _ = app.emit("navigate-to-route", route);
+                let _ = crate::show_or_recreate_main_window(app, "WM_COPYDATA");
+                let _ = app.emit("kbc://navigate", route);
             }
             _ => {
                 let target_mode = match mode {

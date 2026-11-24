@@ -16,6 +16,8 @@ import {
   Keyboard,
   RotateCcw,
   Activity,
+  FileText,
+  FolderOpen,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -34,6 +36,10 @@ import {
   loadJournalMode,
   loadStorageStats,
   loadMemoryStats,
+  loadIdleDestroyDelaySeconds,
+  saveIdleDestroyDelaySeconds,
+  loadLogDir,
+  openLogDir,
 } from '../../data/systemStatus';
 
 interface SystemSettingsModalProps {
@@ -80,6 +86,12 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
   const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [idleDestroyDelaySeconds, setIdleDestroyDelaySeconds] = useState<number | null>(null);
+  const [idleDestroyDelayDraft, setIdleDestroyDelayDraft] = useState(isDevBuild ? '30' : '180');
+  const [idleDestroyDelayError, setIdleDestroyDelayError] = useState<string | null>(null);
+  const [isSavingIdleDestroyDelay, setIsSavingIdleDestroyDelay] = useState(false);
+  const [logDir, setLogDir] = useState<string | null>(null);
+  const [logDirError, setLogDirError] = useState<string | null>(null);
   const [shortcutStatus, setShortcutStatus] = useState<ShortcutStatusInfo | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordHint, setRecordHint] = useState<string | null>(null);
@@ -172,17 +184,42 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
     }
   }, [isOpen]);
 
+  const handleOpenLogDir = useCallback(async () => {
+    try {
+      await openLogDir();
+    } catch (err) {
+      setLogDirError(String(err));
+    }
+  }, []);
+
+  const handleSaveIdleDestroyDelay = useCallback(async () => {
+    setIdleDestroyDelayError(null);
+    setIsSavingIdleDestroyDelay(true);
+    try {
+      const seconds = await saveIdleDestroyDelaySeconds(Number(idleDestroyDelayDraft));
+      setIdleDestroyDelaySeconds(seconds);
+      setIdleDestroyDelayDraft(String(seconds));
+    } catch (error) {
+      setIdleDestroyDelayError(String(error));
+    } finally {
+      setIsSavingIdleDestroyDelay(false);
+    }
+  }, [idleDestroyDelayDraft]);
+
   const refreshStatus = useCallback(async () => {
     setIsRefreshing(true);
     setStatsError(null);
     setDatabaseError(null);
     setMemoryError(null);
+    setLogDirError(null);
 
-    // 三项独立失败：库连不上时磁盘占用与内存仍应如实显示，反之亦然
-    const [statsResult, journalResult, memoryResult] = await Promise.allSettled([
+    // 各项独立失败：库连不上时磁盘占用与内存仍应如实显示，反之亦然
+    const [statsResult, journalResult, memoryResult, logDirResult, idleDelayResult] = await Promise.allSettled([
       loadStorageStats(),
       loadJournalMode(),
       loadMemoryStats(),
+      loadLogDir(),
+      loadIdleDestroyDelaySeconds(),
     ]);
 
     if (statsResult.status === 'fulfilled') {
@@ -205,6 +242,17 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       setMemoryStats(null);
       setMemoryError(String(memoryResult.reason));
     }
+
+    if (logDirResult.status === 'fulfilled') {
+      setLogDir(logDirResult.value);
+    } else {
+      setLogDir(null);
+      setLogDirError(String(logDirResult.reason));
+    }
+
+    const loadedIdleDelay = idleDelayResult.status === 'fulfilled' ? idleDelayResult.value : null;
+    setIdleDestroyDelaySeconds(loadedIdleDelay);
+    if (loadedIdleDelay !== null) setIdleDestroyDelayDraft(String(loadedIdleDelay));
 
     setIsRefreshing(false);
   }, []);
@@ -288,7 +336,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                系统设置 (KeyboardCommand 全局配置)
+                系统设置（键盘命令全局配置）
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 外观颜色主题、版本信息与系统级存储状态
@@ -386,7 +434,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold text-slate-900 dark:text-slate-200">
-                    KeyboardCommand 桌面端
+                    键盘命令桌面端
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {version
@@ -507,6 +555,30 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                     : '正在读取…'}
                 </div>
               </div>
+
+              <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-1 col-span-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-cyan-500" />
+                    运行与生命周期日志目录
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleOpenLogDir()}
+                    title="在系统文件资源管理器中打开日志目录"
+                    className="inline-flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium cursor-pointer"
+                  >
+                    <FolderOpen className="w-3 h-3" />
+                    打开日志目录
+                  </button>
+                </div>
+                <div
+                  className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate"
+                  title={logDir ?? (logDirError ? logDirError : undefined)}
+                >
+                  {logDir ?? (logDirError ? `无法读取：${logDirError}` : '正在读取…')}
+                </div>
+              </div>
             </div>
 
             {stats && (
@@ -582,6 +654,56 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                 </div>
               </div>
             </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-950/60 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 shadow-xs shadow-emerald-500/50" />
+              <span>
+                <strong>后台空闲优化已启用：</strong>主窗口隐藏闲置
+                {idleDestroyDelaySeconds === null
+                  ? '一段时间'
+                  : idleDestroyDelaySeconds >= 60
+                    ? ` ${Math.floor(idleDestroyDelaySeconds / 60)} 分钟（${idleDestroyDelaySeconds} 秒）`
+                    : ` ${idleDestroyDelaySeconds} 秒`}
+                后将自动销毁 WebView 渲染进程释放内存；点击托盘图标或全局快捷键时按需重建恢复。
+              </span>
+            </div>
+
+            <div className="flex items-end gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+              <label className="flex-1 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                <span>主窗口隐藏后销毁 WebView 的等待时间（秒）</span>
+                <input
+                  type="number"
+                  min={30}
+                  max={3600}
+                  step={30}
+                  value={idleDestroyDelayDraft}
+                  disabled={isDevBuild || isSavingIdleDestroyDelay}
+                  onChange={(event) => setIdleDestroyDelayDraft(event.target.value)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-mono text-xs text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleSaveIdleDestroyDelay()}
+                disabled={isDevBuild || isSavingIdleDestroyDelay || Number(idleDestroyDelayDraft) === idleDestroyDelaySeconds}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSavingIdleDestroyDelay ? '保存中…' : '保存'}
+              </button>
+            </div>
+            {isDevBuild && (
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                开发模式固定为 30 秒；正式版本可设置 30–3600 秒，并保存到系统配置。
+              </div>
+            )}
+            {!isDevBuild && (
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                正式版本支持设置 30–3600 秒；默认 180 秒。保存后立即用于后续后台倒计时。
+              </div>
+            )}
+            {idleDestroyDelayError && (
+              <div className="text-[11px] text-red-600 dark:text-red-400">保存失败：{idleDestroyDelayError}</div>
+            )}
 
             <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 px-0.5">
               <span>仅在打开本设置页面时采样（每 5 秒刷新），关闭后定时器自动清除，0 额外 CPU 开销</span>

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
-import { getDatabase } from './settingsDatabase';
+import { getDatabase, loadAppSetting, saveAppSetting } from './settingsDatabase';
+import { isDevBuild } from './browserMenuPolicy';
 
 // 与 src-tauri/src/history_store.rs 的 StorageStats 同形，全部为真实磁盘统计
 export interface StorageStats {
@@ -45,4 +46,42 @@ export interface MemoryStats {
 
 export function loadMemoryStats(): Promise<MemoryStats> {
   return invoke<MemoryStats>('get_memory_stats');
+}
+
+export function loadIdleDestroyDelaySeconds(): Promise<number> {
+  return configureIdleDestroyDelay();
+}
+
+const IDLE_DESTROY_DELAY_SETTING_KEY = 'idle_destroy_delay_seconds';
+
+export async function configureIdleDestroyDelay(): Promise<number> {
+  const defaultSeconds = isDevBuild ? 30 : 180;
+  const storedValue = await loadAppSetting(
+    IDLE_DESTROY_DELAY_SETTING_KEY,
+    String(defaultSeconds),
+  );
+  const parsedSeconds = Number(storedValue);
+  const seconds = isDevBuild
+    ? 30
+    : Number.isInteger(parsedSeconds) && parsedSeconds >= 30 && parsedSeconds <= 3600
+      ? parsedSeconds
+      : 180;
+  return invoke<number>('set_idle_destroy_delay_seconds', { seconds });
+}
+
+export async function saveIdleDestroyDelaySeconds(seconds: number): Promise<number> {
+  if (isDevBuild) return 30;
+  if (!Number.isInteger(seconds) || seconds < 30 || seconds > 3600) {
+    throw new Error('空闲销毁时间必须在 30 到 3600 秒之间。');
+  }
+  await saveAppSetting(IDLE_DESTROY_DELAY_SETTING_KEY, String(seconds));
+  return invoke<number>('set_idle_destroy_delay_seconds', { seconds });
+}
+
+export function loadLogDir(): Promise<string> {
+  return invoke<string>('get_log_dir');
+}
+
+export function openLogDir(): Promise<void> {
+  return invoke<void>('open_log_dir');
 }

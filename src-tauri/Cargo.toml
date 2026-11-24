@@ -26,6 +26,7 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["time", "sync"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-clipboard-manager = "2"
 
