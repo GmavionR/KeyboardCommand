@@ -10,6 +10,10 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 mod context_package;
 mod history_store;
 mod search;
+pub(crate) mod prompt_store;
+pub(crate) mod memory_stats;
+#[cfg(windows)]
+pub(crate) mod windows_bridge;
 
 const DEFAULT_ROUTE: &str = "/folder-copy";
 /// 命令面板全局热键默认值（Ctrl+Shift+K）
@@ -137,7 +141,10 @@ fn validate_route(route: &str) -> Result<&'static str, &'static str> {
 fn parse_palette_mode(value: &str) -> Option<&'static str> {
     match value {
         "show" => Some("show"),
-        "hide" => Some("hide"),
+        "command" | "palette" => Some("command"),
+        "prompts" | "prompt" | "snippets" => Some("prompts"),
+        "blank" => Some("blank"),
+        "hide" | "close" => Some("hide"),
         "toggle" => Some("toggle"),
         _ => None,
     }
@@ -181,6 +188,31 @@ fn parse_activation_args(args: impl IntoIterator<Item = String>) -> ActivationRe
                 args.next();
             }
             requested_palette = Some(mode.unwrap_or("toggle").to_string());
+        } else if argument == "--prompts" || argument == "--picker" {
+            if requested_palette.is_some() {
+                return ActivationRequest::invalid("--palette 或 --prompts 参数只能指定一次。");
+            }
+            requested_palette = Some("prompts".to_string());
+        } else if argument == "--blank" {
+            if requested_palette.is_some() {
+                return ActivationRequest::invalid("浮窗模式参数只能指定一次。");
+            }
+            requested_palette = Some("blank".to_string());
+        } else if argument == "--mode" || argument == "--overlay" {
+            if requested_palette.is_some() {
+                return ActivationRequest::invalid("浮窗模式参数只能指定一次。");
+            }
+            let Some(mode) = args.next() else {
+                return ActivationRequest::invalid("--mode 缺少模式参数（如 command / prompts / blank / hide）。");
+            };
+            let parsed = parse_palette_mode(&mode).unwrap_or("command");
+            requested_palette = Some(parsed.to_string());
+        } else if let Some(mode) = argument.strip_prefix("--mode=") {
+            if requested_palette.is_some() {
+                return ActivationRequest::invalid("浮窗模式参数只能指定一次。");
+            }
+            let parsed = parse_palette_mode(mode).unwrap_or("command");
+            requested_palette = Some(parsed.to_string());
         } else if let Some(mode) = argument.strip_prefix("--palette=") {
             if requested_palette.is_some() {
                 return ActivationRequest::invalid("--palette 参数只能指定一次。");
@@ -215,7 +247,15 @@ fn initial_activation(request: State<'_, ActivationRequest>) -> ActivationReques
 
 /// 计算命令面板在目标显示器上的居中偏上位置，然后显示并聚焦。
 /// 策略：获取当前光标坐标 → 找包含该坐标的显示器 → 居中 X，Y 位于工作区顶部 20%。
-fn show_palette_window(app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn show_palette_window_with_mode(app: &tauri::AppHandle, mode: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    windows_bridge::capture_current_foreground_window();
+
+    let _ = app.emit("picker-mode-switch", mode);
+    show_palette_window(app)
+}
+
+pub(crate) fn show_palette_window(app: &tauri::AppHandle) -> Result<(), String> {
     let palette = app
         .get_webview_window("command-palette")
         .ok_or("找不到命令面板窗口")?;
@@ -266,7 +306,104 @@ fn show_palette_window(app: &tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn show_palette(app: tauri::AppHandle) -> Result<(), String> {
-    show_palette_window(&app)
+    show_palette_window_with_mode(&app, "palette")
+}
+
+#[tauri::command]
+fn show_prompt_picker(app: tauri::AppHandle) -> Result<(), String> {
+    show_palette_window_with_mode(&app, "prompts")
+}
+
+#[tauri::command]
+fn list_prompts(app: tauri::AppHandle) -> Vec<prompt_store::PromptItem> {
+    let dir = prompt_store::get_prompts_directory(&app);
+    prompt_store::list_all_prompts(&dir)
+}
+
+#[tauri::command]
+fn save_prompt(
+    app: tauri::AppHandle,
+    payload: prompt_store::SavePromptPayload,
+) -> Result<prompt_store::PromptItem, String> {
+    let dir = prompt_store::get_prompts_directory(&app);
+    prompt_store::save_prompt_file(&dir, payload)
+}
+
+#[tauri::command]
+fn delete_prompt(file_path: String) -> Result<(), String> {
+    prompt_store::delete_prompt_file(&file_path)
+}
+
+#[tauri::command]
+fn get_prompts_dir(app: tauri::AppHandle) -> String {
+    prompt_store::get_prompts_directory(&app).to_string_lossy().to_string()
+}
+
+#[tauri::command]
+fn set_prompts_dir(app: tauri::AppHandle, new_dir: String) -> Result<String, String> {
+    prompt_store::set_prompts_directory(&app, &new_dir)
+}
+
+#[tauri::command]
+fn paste_prompt(
+    app: tauri::AppHandle,
+    content: String,
+    restore_clipboard: Option<bool>,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        windows_bridge::paste_snippet_to_active_window(
+            &app,
+            &content,
+            restore_clipboard.unwrap_or(true),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, content, restore_clipboard);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn reveal_prompt_file(file_path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        let path = std::path::Path::new(&file_path);
+        if path.exists() {
+            let _ = Command::new("explorer")
+                .arg(format!("/select,{}", path.display()))
+                .spawn();
+            return Ok(());
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = file_path;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_prompt_file(file_path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        let path = std::path::Path::new(&file_path);
+        if path.exists() {
+            let _ = Command::new("cmd")
+                .args(["/C", "start", "", &file_path])
+                .spawn();
+            return Ok(());
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = file_path;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_memory_stats() -> memory_stats::MemoryStats {
+    memory_stats::get_application_memory_stats()
 }
 
 /// 激活主窗口到前台（show + unminimize + set_focus）。
@@ -327,10 +464,16 @@ fn handle_palette_toggle(app_handle: &tauri::AppHandle) {
 
 fn apply_palette_action(app: &tauri::AppHandle, action: &str) {
     match action {
-        "show" => {
-            let _ = show_palette_window(app);
+        "command" | "show" | "palette" => {
+            let _ = show_palette_window_with_mode(app, "command");
         }
-        "hide" => {
+        "prompts" => {
+            let _ = show_palette_window_with_mode(app, "prompts");
+        }
+        "blank" => {
+            let _ = show_palette_window_with_mode(app, "blank");
+        }
+        "hide" | "close" => {
             if let Some(palette) = app.get_webview_window("command-palette") {
                 let _ = palette.hide();
             }
@@ -851,12 +994,13 @@ pub fn run() {
         })
         .setup(|app| {
             let show_main = MenuItem::with_id(app, "show_main", "显示主窗口", true, None::<&str>)?;
+            let show_prompts = MenuItem::with_id(app, "show_prompts", "提示词片段", true, None::<&str>)?;
             let command_palette = MenuItem::with_id(app, "command_palette", "命令面板", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
             let tray_menu = MenuBuilder::new(app)
-                .items(&[&show_main, &command_palette, &separator, &quit])
+                .items(&[&show_main, &show_prompts, &command_palette, &separator, &quit])
                 .build()?;
 
             let mut tray_builder = TrayIconBuilder::with_id("main-tray")
@@ -891,8 +1035,11 @@ pub fn run() {
                                 let _ = window.set_focus();
                             }
                         }
+                        "show_prompts" => {
+                            let _ = show_palette_window_with_mode(app, "prompts");
+                        }
                         "command_palette" => {
-                            let _ = show_palette_window(app);
+                            let _ = show_palette_window_with_mode(app, "palette");
                         }
                         "quit" => {
                             app.exit(0);
@@ -906,6 +1053,17 @@ pub fn run() {
             }
 
             tray_builder.build(app)?;
+
+            // 挂载 Windows 原生 WM_COPYDATA 消息监听通道
+            #[cfg(windows)]
+            {
+                if let Some(main_win) = app.get_webview_window("main") {
+                    windows_bridge::setup_wm_copydata_listener(&main_win);
+                }
+                if let Some(palette_win) = app.get_webview_window("command-palette") {
+                    windows_bridge::setup_wm_copydata_listener(&palette_win);
+                }
+            }
 
             // 读取已保存或默认的全局热键并注册（默认 Ctrl+Shift+K）
             let initial_shortcut = load_shortcut_from_disk(app.handle());
@@ -929,6 +1087,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             initial_activation,
             show_palette,
+            show_prompt_picker,
             show_main_window,
             get_shortcut_status,
             update_palette_shortcut,
@@ -946,7 +1105,16 @@ pub fn run() {
             history_store::replace_history,
             history_store::delete_history,
             history_store::read_history_body,
-            history_store::storage_stats
+            history_store::storage_stats,
+            list_prompts,
+            save_prompt,
+            delete_prompt,
+            get_prompts_dir,
+            set_prompts_dir,
+            paste_prompt,
+            reveal_prompt_file,
+            open_prompt_file,
+            get_memory_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

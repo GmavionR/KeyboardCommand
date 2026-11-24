@@ -34,3 +34,15 @@ export async function loadJournalMode(): Promise<string> {
   if (!mode) throw new Error('SQLite 未返回 journal_mode');
   return mode;
 }
+
+export interface MemoryStats {
+  mainProcessBytes: number;
+  childProcessesBytes: number;
+  totalBytes: number;
+  processCount: number;
+  timestamp: string;
+}
+
+export function loadMemoryStats(): Promise<MemoryStats> {
+  return invoke<MemoryStats>('get_memory_stats');
+}

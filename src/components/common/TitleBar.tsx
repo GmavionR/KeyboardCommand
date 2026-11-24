@@ -1,6 +1,7 @@
 import React from 'react';
-import { Minus, Square, X, Settings as SettingsIcon } from 'lucide-react';
+import { Minus, Square, X, Settings as SettingsIcon, Files, Sparkles } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 
 interface TitleBarProps {
   onOpenSettings: () => void;
@@ -8,19 +9,48 @@ interface TitleBarProps {
 
 export const TitleBar: React.FC<TitleBarProps> = ({ onOpenSettings }) => {
   const appWindow = getCurrentWindow();
+  const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
 
   return (
     <div data-tauri-drag-region="deep" className="h-9 bg-slate-100 dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-3 select-none text-xs text-slate-700 dark:text-slate-300 font-sans tracking-wide transition-colors duration-150">
-      {/* Left: App Logo & Window Title (Desktop native) */}
+      {/* Left: App Logo & Navigation Tabs */}
       <div className="flex items-center space-x-2.5">
         <div className="flex items-center justify-center w-5 h-5 rounded bg-blue-600 text-white font-bold text-[10px] shadow-sm shadow-blue-500/20">
           K
         </div>
-        <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+        <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1">
           KeyboardCommand
-          <span className="text-slate-300 dark:text-slate-700 font-normal">/</span>
-          <span className="text-slate-600 dark:text-slate-300 font-normal">文件夹内容复制</span>
         </span>
+
+        {/* Feature Navigation Tabs */}
+        <div data-tauri-drag-region="false" className="flex items-center space-x-1 border-l border-slate-300 dark:border-slate-700 pl-2">
+          <button
+            type="button"
+            onClick={() => navigate({ to: '/folder-copy' })}
+            className={`flex items-center gap-1.5 h-6 px-2 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              pathname === '/folder-copy'
+                ? 'bg-blue-600/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Files className="w-3 h-3" />
+            <span>文件夹复制</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate({ to: '/prompts' })}
+            className={`flex items-center gap-1.5 h-6 px-2 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+              pathname === '/prompts'
+                ? 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Sparkles className="w-3 h-3 text-amber-500" />
+            <span>提示词片段</span>
+          </button>
+        </div>
       </div>
 
       {/* Right: System Settings Entry (next to Minimize) & Windows Window Controls */}

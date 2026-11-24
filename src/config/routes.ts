@@ -32,8 +32,8 @@ export const APP_ROUTES: RouteMetadata[] = [
   },
   {
     path: '/prompts',
-    title: '打开 Prompts 页面',
-    aliases: ['prompts', 'prompt'],
+    title: '打开提示词片段',
+    aliases: ['prompts', 'prompt', 'snippets', 'snippet', 'tishi', 'ts'],
     category: '页面',
   },
 ];

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Command } from "cmdk";
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   Check,
   Command as CommandIcon,
   Copy,
@@ -16,6 +14,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   Sun,
+  FileText,
+  Square,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -28,11 +28,9 @@ import {
   createAppearanceProvider,
 } from "../../commands";
 import type { CommandItem, CommandCategory } from "../../commands";
+import type { PromptItem } from "../../types/prompt";
 
 const PALETTE_WIDTH = 640;
-// 透明外扩边距：容纳投影（侧向约 60px、顶部约 30px、底部约 90px）；
-// 配合窗口 shadow:false（去掉 DWM 给无装饰窗口加的 1px 边框与圆角），
-// 窗口边界完全不可见，只留内容自身的 20px 圆角
 const GUTTER_X = 64;
 const GUTTER_TOP = 32;
 const GUTTER_BOTTOM = 96;
@@ -40,9 +38,14 @@ const WINDOW_WIDTH = PALETTE_WIDTH + GUTTER_X * 2;
 const WINDOW_EXTRA_HEIGHT = GUTTER_TOP + GUTTER_BOTTOM;
 const DEFAULT_SHORTCUT = "Ctrl+Shift+K";
 
-// ─────────────────────────────────────────────
-// 文本高亮：将 query 命中片段用 <mark> 包裹
-// ─────────────────────────────────────────────
+export type OverlayMode = "command" | "prompts" | "blank";
+
+export const OVERLAY_MODES: { id: OverlayMode; label: string; num: string }[] = [
+  { id: "command", label: "命令", num: "1" },
+  { id: "prompts", label: "提示词", num: "2" },
+  { id: "blank", label: "空白页", num: "3" },
+];
+
 function highlight(text: string, query: string): React.ReactNode {
   if (!query.trim()) return text;
   const lower = text.toLowerCase();
@@ -60,9 +63,6 @@ function highlight(text: string, query: string): React.ReactNode {
   );
 }
 
-// ─────────────────────────────────────────────
-// 是否命中：标题或任意别名包含 query（不敏感大小写）
-// ─────────────────────────────────────────────
 function matchesQuery(item: CommandItem, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.toLowerCase();
@@ -70,14 +70,16 @@ function matchesQuery(item: CommandItem, query: string): boolean {
   return (item.aliases ?? []).some((a) => a.toLowerCase().includes(q));
 }
 
-// ─────────────────────────────────────────────
-// 分类顺序
-// ─────────────────────────────────────────────
+function matchesPrompt(item: PromptItem, query: string): boolean {
+  if (!query.trim()) return true;
+  const q = query.toLowerCase();
+  if (item.title.toLowerCase().includes(q)) return true;
+  if (item.command && item.command.toLowerCase().includes(q)) return true;
+  return item.content.toLowerCase().includes(q);
+}
+
 const CATEGORY_ORDER: CommandCategory[] = ["页面", "操作", "外观", "设置"];
 
-// ─────────────────────────────────────────────
-// 命令图标：优先按命令 id 定制，其余按 icon 字段映射
-// ─────────────────────────────────────────────
 const ICON_BY_ID: Record<string, LucideIcon> = {
   "route./folder-copy": Copy,
   "route./prompts": Sparkles,
@@ -101,14 +103,12 @@ function iconFor(item: CommandItem): LucideIcon {
   );
 }
 
-/** 标题展示：分类前缀独立成弱化标签，去掉标题内重复的「外观：」 */
 function displayTitle(item: CommandItem): string {
   return item.category === "外观"
     ? item.title.replace(/^外观：/, "")
     : item.title;
 }
 
-/** 热键字符串拆成按键 chip（Super 展示为 Win） */
 function shortcutKeys(shortcut: string): string[] {
   return shortcut
     .split("+")
@@ -118,16 +118,12 @@ function shortcutKeys(shortcut: string): string[] {
 }
 
 const KBD_CHIP =
-  "inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-pal-border bg-pal-raised px-1.5 font-mono text-[10px] font-medium text-pal-muted-fg shadow-[0_1px_0_var(--pal-border)]";
+  "inline-flex h-5 min-w-5 items-center justify-center rounded border border-pal-border bg-pal-raised px-1.5 font-mono text-[10px] font-medium text-pal-muted-fg shadow-[0_1px_0_var(--pal-border)] whitespace-nowrap select-none";
 
-// ─────────────────────────────────────────────
-// 执行上下文构造
-// ─────────────────────────────────────────────
 function buildContext() {
   return {
     navigate: async (to: string) => {
       await invoke("show_main_window").catch(() => {});
-      // 通过事件让主窗口路由跳转（issue 32 完善）
       await emit("kbc://navigate", to);
     },
     activateMainWindow: async () => {
@@ -145,21 +141,57 @@ interface ShortcutStatusInfo {
   error: string | null;
 }
 
-// ─────────────────────────────────────────────
-// 核心面板（需 ThemeProvider 包裹）
-// ─────────────────────────────────────────────
 function PaletteInner() {
   const { themeMode } = useTheme();
+  const [mode, setMode] = useState<OverlayMode>("command");
   const [query, setQuery] = useState("");
   const [commands, setCommands] = useState<CommandItem[]>([]);
+  const [prompts, setPrompts] = useState<PromptItem[]>([]);
   const [shortcut, setShortcut] = useState(DEFAULT_SHORTCUT);
-  // 失焦（隐藏）时重挂载面板重置 cmdk 选中态，让高度收敛在隐藏期间完成
+  // 仅在窗口失焦（即隐藏）时递增 session，重置内部选中态；
+  // 模式切换绝不改变 session，以保持 DOM 热挂载，实现 0ms 瞬间渲染与防掉帧
   const [session, setSession] = useState(0);
   const appWindow = getCurrentWindow();
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // 加载命令列表（依赖 themeMode 以更新 checked 状态）
+  // 极速模式切换：仅切换局部状态，不销毁重新挂载 DOM，零白屏、零掉帧
+  const switchToMode = useCallback((target: OverlayMode) => {
+    setMode(target);
+    setQuery("");
+    inputRef.current?.focus();
+  }, []);
+
+  const cycleMode = useCallback((reverse = false) => {
+    setMode((curr) => {
+      const idx = OVERLAY_MODES.findIndex((m) => m.id === curr);
+      const nextIdx = reverse
+        ? (idx - 1 + OVERLAY_MODES.length) % OVERLAY_MODES.length
+        : (idx + 1) % OVERLAY_MODES.length;
+      return OVERLAY_MODES[nextIdx].id;
+    });
+    setQuery("");
+    inputRef.current?.focus();
+  }, []);
+
+  // 监听来自后端/外部消息的模式切换指令
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<string>("picker-mode-switch", ({ payload }) => {
+      const target: OverlayMode =
+        payload === "prompts" || payload === "snippets"
+          ? "prompts"
+          : payload === "blank"
+          ? "blank"
+          : "command";
+      switchToMode(target);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [switchToMode]);
+
+  // 加载命令列表
   useEffect(() => {
     const registry = createDefaultRegistry().register(
       createAppearanceProvider(themeMode),
@@ -167,7 +199,18 @@ function PaletteInner() {
     void registry.getCommands().then(setCommands);
   }, [themeMode]);
 
-  // 读取当前唤起热键，并跟随设置修改实时刷新
+  // 加载提示词列表（预热常驻内存）
+  const loadPrompts = useCallback(() => {
+    void invoke<PromptItem[]>("list_prompts")
+      .then(setPrompts)
+      .catch((err) => console.error("加载提示词失败", err));
+  }, []);
+
+  useEffect(() => {
+    loadPrompts();
+  }, [loadPrompts]);
+
+  // 读取当前唤起热键
   useEffect(() => {
     void invoke<ShortcutStatusInfo>("get_shortcut_status")
       .then((info) => setShortcut(info.shortcut))
@@ -175,38 +218,32 @@ function PaletteInner() {
     let unlisten: (() => void) | undefined;
     void listen<ShortcutStatusInfo>("palette-shortcut-changed", ({ payload }) => {
       setShortcut(payload.shortcut);
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => {});
-    return () => {
-      unlisten?.();
-    };
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
   }, []);
 
-  // 重置发生在失焦（即隐藏）期间：搜索清空、选中态归位、窗口高度收敛都在
-  // 隐藏时完成；显示时仅聚焦输入框，避免_show 后重挂载造成空白闪与二次 resize 抖动
+  // 焦点与隐藏重置
   useEffect(() => {
     function onFocus() {
       inputRef.current?.focus();
+      loadPrompts();
     }
     function onBlur() {
       setQuery("");
+      setMode("command"); // 每次关闭后默认恢复为命令模式
       setSession((s) => s + 1);
     }
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
-    // CLI 首启动等场景窗口可能先于 React 挂载获焦，挂载时补一次聚焦
     if (document.hasFocus()) inputRef.current?.focus();
     return () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
     };
-  }, []);
+  }, [loadPrompts]);
 
-  // 隐藏页的渲染帧被暂停，ResizeObserver 回调会推迟到显示之后；
-  // 这里在提交后同步量高设尺寸，保证窗口在隐藏期间就收敛到正确高度
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -214,9 +251,8 @@ function PaletteInner() {
     void appWindow
       .setSize(new LogicalSize(WINDOW_WIDTH, height))
       .catch(() => {});
-  }, [appWindow, session, query, commands]);
+  }, [appWindow, session, query, commands, prompts, mode]);
 
-  // 窗口高度随内容紧凑包裹（透明窗口不留空白点击陷阱）
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -230,12 +266,10 @@ function PaletteInner() {
     return () => observer.disconnect();
   }, [appWindow, session]);
 
-  // 隐藏面板
   const hidePalette = useCallback(() => {
     void appWindow.hide();
   }, [appWindow]);
 
-  // 执行命令后隐藏
   const runCommand = useCallback(
     async (item: CommandItem) => {
       hidePalette();
@@ -248,20 +282,31 @@ function PaletteInner() {
     [hidePalette],
   );
 
-  // 过滤命令
-  const filtered = commands.filter((c) => matchesQuery(c, query));
+  const sendPrompt = useCallback(
+    async (item: PromptItem) => {
+      hidePalette();
+      try {
+        await invoke("paste_prompt", { content: item.content, restoreClipboard: true });
+      } catch (e) {
+        console.error("发送提示词失败", e);
+      }
+    },
+    [hidePalette],
+  );
 
-  // 按分类分组
-  const groups = CATEGORY_ORDER.map((cat) => ({
+  // 过滤命令与提示词（纯内存过滤，耗时 < 0.5ms）
+  const filteredCommands = commands.filter((c) => matchesQuery(c, query));
+  const filteredPrompts = prompts.filter((p) => matchesPrompt(p, query));
+
+  const commandGroups = CATEGORY_ORDER.map((cat) => ({
     category: cat,
-    items: filtered.filter((c) => c.category === cat),
+    items: filteredCommands.filter((c) => c.category === cat),
   })).filter((g) => g.items.length > 0);
 
   return (
     <div
       className="flex min-h-screen items-start justify-center bg-transparent px-16 pb-24 pt-8"
       onMouseDown={(e) => {
-        // 点击面板外的透明区域视为失焦意图，直接隐藏
         if (e.target === e.currentTarget) hidePalette();
       }}
     >
@@ -270,133 +315,254 @@ function PaletteInner() {
         ref={rootRef}
         className="w-full max-w-[640px] overflow-hidden rounded-[20px] bg-pal-surface shadow-palette"
         loop
-        // 禁用 vim 绑定（cmdk ≥1.x 默认不启用，明确传 false 保险）
         vimBindings={false}
         shouldFilter={false}
         onKeyDown={(e: React.KeyboardEvent) => {
-          if (e.key === "Escape") hidePalette();
+          if (e.key === "Escape") {
+            hidePalette();
+          } else if (e.key === "Tab") {
+            e.preventDefault();
+            cycleMode(e.shiftKey);
+          } else if (e.ctrlKey && e.key === "1") {
+            e.preventDefault();
+            switchToMode("command");
+          } else if (e.ctrlKey && e.key === "2") {
+            e.preventDefault();
+            switchToMode("prompts");
+          } else if (e.ctrlKey && e.key === "3") {
+            e.preventDefault();
+            switchToMode("blank");
+          }
         }}
       >
-        {/* 搜索输入框 */}
-        <div className="flex items-center gap-3 border-b border-pal-border px-5">
-          <Search className="size-5 shrink-0 text-pal-muted-fg" />
+        {/* 顶部搜索框与形态选择条（精巧紧凑布局，绝不挤压输入框文本） */}
+        <div className="flex items-center gap-3 border-b border-pal-border px-4 py-1.5">
+          <div className="flex size-7 shrink-0 items-center justify-center text-pal-muted-fg">
+            {mode === "command" ? (
+              <Search className="size-4.5" />
+            ) : mode === "prompts" ? (
+              <Sparkles className="size-4.5 text-amber-500" />
+            ) : (
+              <Square className="size-4.5 text-cyan-500" />
+            )}
+          </div>
+
           <Command.Input
             ref={inputRef}
             value={query}
             onValueChange={setQuery}
-            placeholder="搜索命令或功能…"
-            className="h-14 flex-1 bg-transparent text-[15px] text-pal-fg outline-none placeholder:text-pal-muted-fg"
+            placeholder={
+              mode === "command"
+                ? "搜索命令或功能…"
+                : mode === "prompts"
+                ? "搜索提示词并回车发送…"
+                : "空白页面视图"
+            }
+            className="h-11 flex-1 min-w-0 bg-transparent text-sm text-pal-fg outline-none placeholder:text-pal-muted-fg"
           />
-          <kbd className={KBD_CHIP}>esc</kbd>
+
+          {/* 模式切换器：精巧的 Segmented Tabs（紧凑、清晰、不占过多宽度） */}
+          <div className="flex items-center rounded-lg border border-pal-border bg-pal-muted/40 p-0.5 shrink-0 select-none">
+            {OVERLAY_MODES.map((m) => {
+              const isActive = mode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => switchToMode(m.id)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? "bg-pal-raised text-pal-fg shadow-xs font-semibold"
+                      : "text-pal-muted-fg hover:text-pal-fg hover:bg-pal-raised/40 font-normal"
+                  }`}
+                  title={`按 Ctrl+${m.num} 或 Tab 切换`}
+                >
+                  <span className="font-mono text-[10px] opacity-40">^{m.num}</span>
+                  <span>{m.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <kbd className={`${KBD_CHIP} shrink-0`}>esc</kbd>
         </div>
 
-        {/* 命令列表 */}
-        <Command.List className="palette-scroll max-h-[382px] overflow-y-auto overscroll-contain p-2 scroll-py-2">
-          <Command.Empty className="py-8 text-center text-sm text-pal-muted-fg">
-            没有搜索到匹配命令
-          </Command.Empty>
+        {/* 列表区域 / 视图模式容器（保持 min-h-[300px] 保证切换模式时高度平滑无闪烁） */}
+        <Command.List className="palette-scroll min-h-[300px] max-h-[382px] overflow-y-auto overscroll-contain p-2 scroll-py-2">
+          {mode === "command" ? (
+            <>
+              <Command.Empty className="py-12 text-center text-sm text-pal-muted-fg">
+                没有搜索到匹配命令
+              </Command.Empty>
 
-          {groups.map(({ category, items }) => (
-            <Command.Group
-              key={category}
-              heading={category}
-              className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.05em] [&_[cmdk-group-heading]]:text-pal-muted-fg"
-            >
-              {items.map((item) => {
-                const Icon = iconFor(item);
-                return (
+              {commandGroups.map(({ category, items }) => (
+                <Command.Group
+                  key={category}
+                  heading={category}
+                  className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.05em] [&_[cmdk-group-heading]]:text-pal-muted-fg"
+                >
+                  {items.map((item) => {
+                    const Icon = iconFor(item);
+                    return (
+                      <Command.Item
+                        key={item.id}
+                        value={item.id}
+                        disabled={item.canExecute?.() === false}
+                        onSelect={() => void runCommand(item)}
+                        className="group relative flex h-11 cursor-pointer select-none items-center gap-3 rounded-lg px-3 text-sm text-pal-fg transition-colors aria-selected:bg-pal-brand-soft aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
+                      >
+                        <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-pal-brand opacity-0 transition-opacity group-aria-selected:opacity-100" />
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-pal-border bg-pal-raised text-pal-muted-fg transition-colors group-aria-selected:border-transparent group-aria-selected:bg-pal-brand group-aria-selected:text-pal-on-brand">
+                          <Icon className="size-4" />
+                        </span>
+                        <span className="flex-1 truncate">
+                          {(category === "页面" || category === "外观") && (
+                            <span className="mr-1.5 text-pal-muted-fg">
+                              {category} ·
+                            </span>
+                          )}
+                          {highlight(displayTitle(item), query)}
+                          {item.disabledReason && (
+                            <span className="ml-2 text-xs text-pal-muted-fg">
+                              ({item.disabledReason})
+                            </span>
+                          )}
+                        </span>
+                        {item.shortcut && (
+                          <span className="flex shrink-0 gap-1">
+                            {shortcutKeys(item.shortcut).map((k) => (
+                              <kbd key={k} className={KBD_CHIP}>
+                                {k}
+                              </kbd>
+                            ))}
+                          </span>
+                        )}
+                        {item.checked ? (
+                          <Check className="size-4 shrink-0 text-pal-brand" />
+                        ) : item.type === "jump" ? (
+                          <CornerDownLeft className="size-4 shrink-0 text-pal-muted-fg transition-colors group-aria-selected:text-pal-brand" />
+                        ) : null}
+                      </Command.Item>
+                    );
+                  })}
+                </Command.Group>
+              ))}
+            </>
+          ) : mode === "prompts" ? (
+            <>
+              <Command.Empty className="py-12 text-center text-sm text-pal-muted-fg">
+                没有找到匹配的提示词
+              </Command.Empty>
+
+              <Command.Group
+                heading="可用提示词（回车直接发送到当前窗口）"
+                className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.05em] [&_[cmdk-group-heading]]:text-pal-muted-fg"
+              >
+                {filteredPrompts.map((item) => (
                   <Command.Item
                     key={item.id}
                     value={item.id}
-                    disabled={item.canExecute?.() === false}
-                    onSelect={() => void runCommand(item)}
-                    className="group relative flex h-11 cursor-pointer select-none items-center gap-3 rounded-lg px-3 text-sm text-pal-fg transition-colors aria-selected:bg-pal-brand-soft aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
+                    onSelect={() => void sendPrompt(item)}
+                    className="group relative flex h-13 cursor-pointer select-none items-center gap-3 rounded-lg px-3 text-sm text-pal-fg transition-colors aria-selected:bg-pal-brand-soft"
                   >
-                    {/* 选中态左侧品牌色指示条 */}
-                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-pal-brand opacity-0 transition-opacity group-aria-selected:opacity-100" />
-
-                    {/* 图标块：选中时反转为品牌色底 */}
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-pal-border bg-pal-raised text-pal-muted-fg transition-colors group-aria-selected:border-transparent group-aria-selected:bg-pal-brand group-aria-selected:text-pal-on-brand">
-                      <Icon className="size-4" />
+                    <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-amber-500 opacity-0 transition-opacity group-aria-selected:opacity-100" />
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-pal-border bg-pal-raised text-pal-muted-fg transition-colors group-aria-selected:border-transparent group-aria-selected:bg-amber-500 group-aria-selected:text-white">
+                      <FileText className="size-4" />
                     </span>
 
-                    {/* 标题（含分类弱化前缀与命中高亮） */}
-                    <span className="flex-1 truncate">
-                      {(category === "页面" || category === "外观") && (
-                        <span className="mr-1.5 text-pal-muted-fg">
-                          {category} ·
+                    <div className="flex flex-1 flex-col truncate">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-pal-fg">
+                          {highlight(item.title, query)}
                         </span>
-                      )}
-                      {highlight(displayTitle(item), query)}
-                      {item.disabledReason && (
-                        <span className="ml-2 text-xs text-pal-muted-fg">
-                          ({item.disabledReason})
-                        </span>
-                      )}
-                    </span>
-
-                    {/* 快捷键提示 */}
-                    {item.shortcut && (
-                      <span className="flex shrink-0 gap-1">
-                        {shortcutKeys(item.shortcut).map((k) => (
-                          <kbd key={k} className={KBD_CHIP}>
-                            {k}
-                          </kbd>
-                        ))}
+                        {item.command && (
+                          <span className="inline-flex items-center rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                            /{highlight(item.command, query)}
+                          </span>
+                        )}
+                        {item.hasError && (
+                          <span className="rounded bg-red-500/10 px-1.5 text-[10px] text-red-500">
+                            格式警告
+                          </span>
+                        )}
+                      </div>
+                      <span className="truncate text-xs text-pal-muted-fg">
+                        {item.content}
                       </span>
-                    )}
+                    </div>
 
-                    {/* 状态图标：checked → ✓，jump → ↵ */}
-                    {item.checked ? (
-                      <Check className="size-4 shrink-0 text-pal-brand" />
-                    ) : item.type === "jump" ? (
-                      <CornerDownLeft className="size-4 shrink-0 text-pal-muted-fg transition-colors group-aria-selected:text-pal-brand" />
-                    ) : null}
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-pal-muted-fg opacity-0 transition-opacity group-aria-selected:opacity-100">
+                      <span>发送</span>
+                      <CornerDownLeft className="size-3.5 text-amber-500" />
+                    </span>
                   </Command.Item>
-                );
-              })}
-            </Command.Group>
-          ))}
+                ))}
+              </Command.Group>
+            </>
+          ) : (
+            /* 形态 3：单独的空白页面内放入 h1 */
+            <div className="flex flex-col items-center justify-center py-20 px-6 text-center select-none">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-500 mb-4 border border-cyan-500/20 shadow-xs">
+                <Square className="size-7" />
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-pal-fg">
+                空白页面
+              </h1>
+              <p className="mt-2 text-xs text-pal-muted-fg max-w-sm leading-relaxed">
+                这是快捷浮窗的第三种形态（视图模式）。你可以按 Tab 循环切换，或按 Ctrl+1 返回命令面板。
+              </p>
+              <div className="mt-6 flex items-center gap-2 text-[11px] text-pal-muted-fg">
+                <span>按</span>
+                <kbd className={KBD_CHIP}>Tab</kbd>
+                <span>循环切换形态，或按</span>
+                <kbd className={KBD_CHIP}>Ctrl+1</kbd>
+                <span>直达命令面板</span>
+              </div>
+            </div>
+          )}
         </Command.List>
 
-        {/* 底部指引条：左侧操作提示，右侧当前唤起热键 */}
-        <div className="flex items-center gap-4 border-t border-pal-border bg-pal-muted/40 px-4 py-2.5 text-xs text-pal-muted-fg">
-          <span className="flex items-center gap-1.5">
-            <kbd className={KBD_CHIP}>
-              <ArrowUp className="size-3" />
-            </kbd>
-            <kbd className={KBD_CHIP}>
-              <ArrowDown className="size-3" />
-            </kbd>
-            选择
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className={KBD_CHIP}>
-              <CornerDownLeft className="size-3" />
-            </kbd>
-            执行
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className={KBD_CHIP}>esc</kbd>
-            隐藏
-          </span>
-          <span className="ml-auto flex items-center gap-1.5">
+        {/* 底部指引条：彻底解决竖向折字与错位，完全 whitespace-nowrap 布局 */}
+        <div className="flex items-center justify-between border-t border-pal-border bg-pal-muted/40 px-4 py-2 text-[11px] text-pal-muted-fg select-none">
+          {/* 左侧操作快捷键组 */}
+          <div className="flex items-center gap-3.5 whitespace-nowrap overflow-hidden">
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              <kbd className={KBD_CHIP}>Tab</kbd>
+              <span>切换形态</span>
+            </span>
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              <kbd className={KBD_CHIP}>Ctrl+1..3</kbd>
+              <span>直达</span>
+            </span>
+            {mode !== "blank" && (
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                <kbd className={KBD_CHIP}>↑↓</kbd>
+                <span>选择</span>
+                <kbd className={KBD_CHIP}>↵</kbd>
+                <span>{mode === "command" ? "执行" : "发送"}</span>
+              </span>
+            )}
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              <kbd className={KBD_CHIP}>Esc</kbd>
+              <span>隐藏</span>
+            </span>
+          </div>
+
+          {/* 右侧唤起热键 */}
+          <div className="flex items-center gap-1.5 whitespace-nowrap shrink-0 pl-2">
             {shortcutKeys(shortcut).map((k) => (
               <kbd key={k} className={KBD_CHIP}>
                 {k}
               </kbd>
             ))}
-            唤起
-          </span>
+            <span>唤起</span>
+          </div>
         </div>
       </Command>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────
-// 对外导出：包裹 ThemeProvider
-// ─────────────────────────────────────────────
 export function CommandPalette() {
   return (
     <ThemeProvider>

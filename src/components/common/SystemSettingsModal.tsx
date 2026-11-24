@@ -15,6 +15,7 @@ import {
   CheckCircle,
   Keyboard,
   RotateCcw,
+  Activity,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -28,9 +29,11 @@ import {
 import {
   AppVersion,
   StorageStats,
+  MemoryStats,
   loadAppVersion,
   loadJournalMode,
   loadStorageStats,
+  loadMemoryStats,
 } from '../../data/systemStatus';
 
 interface SystemSettingsModalProps {
@@ -75,6 +78,8 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [journalMode, setJournalMode] = useState<string | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
   const [shortcutStatus, setShortcutStatus] = useState<ShortcutStatusInfo | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordHint, setRecordHint] = useState<string | null>(null);
@@ -171,11 +176,13 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
     setIsRefreshing(true);
     setStatsError(null);
     setDatabaseError(null);
+    setMemoryError(null);
 
-    // 两项独立失败：库连不上时磁盘占用仍应如实显示，反之亦然
-    const [statsResult, journalResult] = await Promise.allSettled([
+    // 三项独立失败：库连不上时磁盘占用与内存仍应如实显示，反之亦然
+    const [statsResult, journalResult, memoryResult] = await Promise.allSettled([
       loadStorageStats(),
       loadJournalMode(),
+      loadMemoryStats(),
     ]);
 
     if (statsResult.status === 'fulfilled') {
@@ -192,8 +199,47 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       setDatabaseError(String(journalResult.reason));
     }
 
+    if (memoryResult.status === 'fulfilled') {
+      setMemoryStats(memoryResult.value);
+    } else {
+      setMemoryStats(null);
+      setMemoryError(String(memoryResult.reason));
+    }
+
     setIsRefreshing(false);
   }, []);
+
+  // 内存占用定时采样：只在设置弹窗打开时运行，关闭后定时器自动清除，保持零额外 CPU 开销
+  useEffect(() => {
+    if (!isOpen) {
+      setMemoryStats(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchMemory = async () => {
+      try {
+        const data = await loadMemoryStats();
+        if (isMounted) {
+          setMemoryStats(data);
+          setMemoryError(null);
+        }
+      } catch (e) {
+        if (isMounted) setMemoryError(String(e));
+      }
+    };
+
+    // 弹窗打开时立即读一次，之后每 5 秒自动采样一次
+    void fetchMemory();
+    const timer = setInterval(() => {
+      void fetchMemory();
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -468,6 +514,81 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                 合计 {formatBytes(stats.databaseBytes + stats.historyBytes)}
               </div>
             )}
+          </div>
+
+          {/* Section: 运行时内存占用与轻量化监控 */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <span className="font-semibold text-slate-900 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-cyan-500" />
+                运行时内存占用 (40MB 轻量化预算)
+              </span>
+              <div className="flex items-center gap-2">
+                {memoryStats ? (
+                  <span
+                    className={`text-[11px] font-mono ${
+                      memoryStats.totalBytes <= 40 * 1024 * 1024
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-amber-600 dark:text-amber-400'
+                    }`}
+                  >
+                    {memoryStats.totalBytes <= 40 * 1024 * 1024
+                      ? '● 极轻量达标 (≤40MB)'
+                      : '▲ 稍高于预期'}
+                  </span>
+                ) : memoryError ? (
+                  <span className="text-[11px] font-mono text-rose-500">● 无法读取</span>
+                ) : (
+                  <span className="text-[11px] font-mono text-slate-400">● 正在采样…</span>
+                )}
+              </div>
+            </div>
+
+            {memoryError && (
+              <div className="flex items-start space-x-2 text-rose-700 dark:text-rose-300 text-[11px] bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded border border-rose-200 dark:border-rose-800/60">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px text-rose-500" />
+                <span className="break-all">内存占用读取失败：{memoryError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-1">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">应用总物理内存</div>
+                <div className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {memoryStats ? formatBytes(memoryStats.totalBytes) : memoryError ? '无法读取' : '正在计算…'}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                  主进程 + {memoryStats ? Math.max(0, memoryStats.processCount - 1) : 0} 个子进程
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-1">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">Rust 宿主主进程</div>
+                <div className="font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
+                  {memoryStats ? formatBytes(memoryStats.mainProcessBytes) : memoryError ? '无法读取' : '正在计算…'}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                  Win32 窗口与后端运行时
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-1">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">WebView2 渲染工作集</div>
+                <div className="font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
+                  {memoryStats ? formatBytes(memoryStats.childProcessesBytes) : memoryError ? '无法读取' : '正在计算…'}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                  {memoryStats ? `${Math.max(0, memoryStats.processCount - 1)} 个独立渲染进程` : '加载中…'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 px-0.5">
+              <span>仅在打开本设置页面时采样（每 5 秒刷新），关闭后定时器自动清除，0 额外 CPU 开销</span>
+              {memoryStats && (
+                <span className="font-mono text-[10px]">采样时间: {memoryStats.timestamp}</span>
+              )}
+            </div>
           </div>
 
           {/* Section 4: 系统级全局快捷键 */}
